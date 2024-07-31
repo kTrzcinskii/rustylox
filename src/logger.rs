@@ -9,15 +9,15 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub enum DebuggerError {
+pub enum LoggerError {
     ConversionError(OperationCodeConversionError),
 }
 
-pub struct Debugger {}
+pub struct Logger {}
 
-impl Debugger {
-    pub fn disassemble_chunk(chunk: &Chunk, name: &str) -> Result<(), DebuggerError> {
-        #[cfg(feature = "debug_trace_execution")]
+impl Logger {
+    pub fn disassemble_chunk(chunk: &Chunk, name: &str) -> Result<(), LoggerError> {
+        #[cfg(feature = "log_trace_execution")]
         {
             println!("== {} ==", name);
             let mut offset: usize = 0;
@@ -28,8 +28,8 @@ impl Debugger {
         Ok(())
     }
 
-    pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> Result<usize, DebuggerError> {
-        #[cfg(feature = "debug_trace_execution")]
+    pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> Result<usize, LoggerError> {
+        #[cfg(feature = "log_trace_execution")]
         {
             print!("{:04} - ", offset);
 
@@ -41,7 +41,7 @@ impl Debugger {
 
             let code = chunk
                 .read_operation_code(offset)
-                .map_err(DebuggerError::ConversionError)?;
+                .map_err(LoggerError::ConversionError)?;
             match code {
                 OperationCode::Return => {
                     return Ok(Self::simple_instruction("OP_RETURN", offset, code))
@@ -59,13 +59,13 @@ impl Debugger {
         Ok(0)
     }
 
-    #[cfg(feature = "debug_trace_execution")]
+    #[cfg(feature = "log_trace_execution")]
     fn simple_instruction(name: &str, offset: usize, code: OperationCode) -> usize {
         println!("{}", name);
         offset + OperationCode::get_instruction_bytes_length(&code)
     }
 
-    #[cfg(feature = "debug_trace_execution")]
+    #[cfg(feature = "log_trace_execution")]
     fn constant_instruction(
         name: &str,
         offset: usize,

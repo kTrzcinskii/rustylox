@@ -1,4 +1,4 @@
 pub mod chunk;
-pub mod debugger;
+pub mod logger;
 pub mod value;
 pub mod vm;

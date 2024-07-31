@@ -5,6 +5,6 @@ edition = "2021"
 
 [features]
 deafult = []
-debug_trace_execution = []
+log_trace_execution = []
 
 [dependencies]

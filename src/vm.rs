@@ -1,6 +1,6 @@
 use crate::{
     chunk::{Chunk, OperationCode, OperationCodeConversionError},
-    debugger::Debugger,
+    logger::Logger,
     value::ValueContainer,
 };
 
@@ -35,7 +35,7 @@ impl VirtualMachine {
 
     fn run(&mut self, chunk: &Chunk) -> Result<InterpretResult, OperationCodeConversionError> {
         loop {
-            Debugger::disassemble_instruction(chunk, self.instruction_pointer).unwrap();
+            Logger::disassemble_instruction(chunk, self.instruction_pointer).unwrap();
 
             let instruction = chunk.read_operation_code(self.instruction_pointer)?;
             self.instruction_pointer += OperationCode::get_instruction_bytes_length(&instruction);

@@ -1,6 +1,6 @@
 use rustylox::{
     chunk::{Chunk, OperationCode},
-    debugger::Debugger,
+    logger::Logger,
     vm::VirtualMachine,
 };
 
@@ -12,7 +12,7 @@ fn main() {
     chunk.add_instruction(OperationCode::Constant(constant_index), 123);
     chunk.add_instruction(OperationCode::Return, 123);
 
-    Debugger::disassemble_chunk(&chunk, "test chunk").unwrap();
+    Logger::disassemble_chunk(&chunk, "test chunk").unwrap();
 
     vm.interpret(&chunk);
 }
