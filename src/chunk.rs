@@ -8,7 +8,7 @@ pub enum OperationCode {
 }
 
 impl OperationCode {
-    pub fn get_instruction_bytes_length(code: Self) -> usize {
+    pub fn get_instruction_bytes_length(code: &Self) -> usize {
         match code {
             OperationCode::Return => 1,
             OperationCode::Constant(_) => 2,
@@ -54,7 +54,7 @@ impl TryFrom<&[u8]> for OperationCode {
             0 => Ok(OperationCode::Return),
             1 => {
                 if value.len()
-                    < OperationCode::get_instruction_bytes_length(OperationCode::Constant(
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::Constant(
                         usize::MIN,
                     ))
                 {
@@ -83,11 +83,11 @@ impl Chunk {
         let initial_instruction = Vec::with_capacity(Self::INITIAL_INSTRUCTIONS_SIZE);
         let initial_lines = Vec::with_capacity(Self::INITIAL_INSTRUCTIONS_SIZE);
         let initial_constants = ValueContainer::new();
-        return Chunk {
+        Chunk {
             instructions: initial_instruction,
             lines: initial_lines,
             constants: initial_constants,
-        };
+        }
     }
 
     pub fn add_instruction(&mut self, operation_code: OperationCode, line: usize) {
@@ -113,7 +113,7 @@ impl Chunk {
         } else {
             offset + 2
         };
-        return OperationCode::try_from(&self.instructions[offset..finish]);
+        OperationCode::try_from(&self.instructions[offset..finish])
     }
 
     pub fn read_constant(&self, offset: usize) -> Value {
@@ -126,5 +126,11 @@ impl Chunk {
 
     pub fn get_instructions_length(&self) -> usize {
         self.instructions.len()
+    }
+}
+
+impl Default for Chunk {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -3,4 +3,8 @@ name = "rustylox"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+deafult = []
+debug_trace_execution = []
+
 [dependencies]

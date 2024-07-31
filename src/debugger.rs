@@ -20,7 +20,7 @@ impl Debugger {
         Ok(())
     }
 
-    fn disassemble_instruction(chunk: &Chunk, offset: usize) -> Result<usize, DebuggerError> {
+    pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> Result<usize, DebuggerError> {
         print!("{:04} - ", offset);
 
         if offset > 0 && chunk.read_line(offset) == chunk.read_line(offset - 1) {
@@ -31,7 +31,7 @@ impl Debugger {
 
         let code = chunk
             .read_operation_code(offset)
-            .map_err(|err| DebuggerError::ConversionError(err))?;
+            .map_err(DebuggerError::ConversionError)?;
         match code {
             OperationCode::Return => Ok(Self::simple_instruction("OP_RETURN", offset, code)),
             OperationCode::Constant(constant_index) => Ok(Self::constant_instruction(
@@ -45,7 +45,7 @@ impl Debugger {
 
     fn simple_instruction(name: &str, offset: usize, code: OperationCode) -> usize {
         println!("{}", name);
-        offset + OperationCode::get_instruction_bytes_length(code)
+        offset + OperationCode::get_instruction_bytes_length(&code)
     }
 
     fn constant_instruction(
@@ -55,9 +55,9 @@ impl Debugger {
         constant_value: Value,
     ) -> usize {
         print!("{:<16} {:>4} '", name, constant_index);
-        ValueContainer::print_value(constant_value);
+        ValueContainer::print_value(&constant_value);
         println!();
         offset
-            + OperationCode::get_instruction_bytes_length(OperationCode::Constant(constant_index))
+            + OperationCode::get_instruction_bytes_length(&OperationCode::Constant(constant_index))
     }
 }

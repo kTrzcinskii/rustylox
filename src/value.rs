@@ -26,7 +26,13 @@ impl ValueContainer {
         self.values[offset]
     }
 
-    pub fn print_value(value: Value) {
+    pub fn print_value(value: &Value) {
         print!("{}", value)
+    }
+}
+
+impl Default for ValueContainer {
+    fn default() -> Self {
+        Self::new()
     }
 }
