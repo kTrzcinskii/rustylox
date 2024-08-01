@@ -38,13 +38,16 @@ impl VirtualMachine {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.reset_stack();
+    }
+
     fn reset_stack(&mut self) {
         self.stack.clear();
     }
 
     pub fn interpret(&mut self, chunk: &Chunk) -> InterpretResult {
         self.instruction_pointer = 0;
-        self.reset_stack();
         // TODO: handle error gracefully
         self.run(chunk).unwrap()
     }
