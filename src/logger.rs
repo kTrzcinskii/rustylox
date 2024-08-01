@@ -54,9 +54,29 @@ impl Logger {
                         chunk.read_constant(constant_index),
                     ))
                 }
+                OperationCode::Negate => {
+                    return Ok(Self::simple_instruction("OP_NEGATE", offset, code))
+                }
+                OperationCode::Add => return Ok(Self::simple_instruction("OP_ADD", offset, code)),
+                OperationCode::Substract => {
+                    return Ok(Self::simple_instruction("OP_SUBTRACT", offset, code))
+                }
+                OperationCode::Multiply => {
+                    return Ok(Self::simple_instruction("OP_MULTIPLY", offset, code))
+                }
+                OperationCode::Divide => {
+                    return Ok(Self::simple_instruction("OP_DIVIDE", offset, code))
+                }
             }
         }
         Ok(0)
+    }
+
+    pub fn show_stack_content(stack: &[Value]) {
+        #[cfg(feature = "log_trace_execution")]
+        {
+            println!("{:?}", stack);
+        }
     }
 
     #[cfg(feature = "log_trace_execution")]

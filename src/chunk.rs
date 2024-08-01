@@ -1,10 +1,14 @@
 use crate::value::{Value, ValueContainer};
 
 pub enum OperationCode {
-    /// Return operation (no arguments)
     Return,
-    /// Load constant operation (1 argument - constant index in `ValueContainer`)
+    /// Load constant operation, arguments: (constant index in `ValueContainer`)
     Constant(usize),
+    Negate,
+    Add,
+    Substract,
+    Multiply,
+    Divide,
 }
 
 impl OperationCode {
@@ -12,6 +16,11 @@ impl OperationCode {
         match code {
             OperationCode::Return => 1,
             OperationCode::Constant(_) => 2,
+            OperationCode::Negate => 1,
+            OperationCode::Add => 1,
+            OperationCode::Substract => 1,
+            OperationCode::Multiply => 1,
+            OperationCode::Divide => 1,
         }
     }
 }
@@ -21,6 +30,11 @@ impl From<OperationCode> for u8 {
         match value {
             OperationCode::Return => 0,
             OperationCode::Constant(_) => 1,
+            OperationCode::Negate => 2,
+            OperationCode::Add => 3,
+            OperationCode::Substract => 4,
+            OperationCode::Multiply => 5,
+            OperationCode::Divide => 6,
         }
     }
 }
@@ -32,6 +46,11 @@ impl From<OperationCode> for Vec<u8> {
             OperationCode::Constant(constant) => {
                 vec![u8::from(OperationCode::Constant(constant)), constant as u8]
             }
+            OperationCode::Negate => vec![u8::from(OperationCode::Negate)],
+            OperationCode::Add => vec![u8::from(OperationCode::Add)],
+            OperationCode::Substract => vec![u8::from(OperationCode::Substract)],
+            OperationCode::Multiply => vec![u8::from(OperationCode::Multiply)],
+            OperationCode::Divide => vec![u8::from(OperationCode::Divide)],
         }
     }
 }
@@ -62,6 +81,11 @@ impl TryFrom<&[u8]> for OperationCode {
                 }
                 Ok(OperationCode::Constant(value[1] as usize))
             }
+            2 => Ok(OperationCode::Negate),
+            3 => Ok(OperationCode::Add),
+            4 => Ok(OperationCode::Substract),
+            5 => Ok(OperationCode::Multiply),
+            6 => Ok(OperationCode::Divide),
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
     }
