@@ -1,6 +1,6 @@
 use crate::{
     chunk::{Chunk, OperationCode, OperationCodeConversionError},
-    compiler::Compiler,
+    compiler,
     logger::Logger,
     value::{Value, ValueContainer},
 };
@@ -48,8 +48,7 @@ impl VirtualMachine {
     }
 
     pub fn interpret(&mut self, source: &str) -> InterpretResult {
-        let compiler = Compiler::new();
-        compiler.compile(source);
+        compiler::compile(source);
         InterpretResult::Ok
     }
 
