@@ -69,7 +69,7 @@ pub struct Lexer<'a> {
 
 /// Represents error occured while scanning with provided error message and line on which it occured
 #[derive(Debug)]
-pub struct LexerError(String, usize);
+pub struct LexerError<'a>(pub &'a str, pub usize);
 
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
@@ -185,8 +185,8 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn create_error(&self, message: &str) -> LexerError {
-        LexerError(message.into(), self.line)
+    fn create_error(&self, message: &'a str) -> LexerError<'a> {
+        LexerError(message, self.line)
     }
 
     fn make_token(&self, token_type: TokenType) -> Token {
