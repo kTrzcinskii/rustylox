@@ -1,6 +1,6 @@
 use std::{iter::Peekable, str::Chars};
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum TokenType {
     // Single character tokens
     LeftParen,
@@ -47,6 +47,7 @@ pub enum TokenType {
     Eof,
 }
 
+#[derive(Clone, Copy)]
 pub struct Token {
     pub token_type: TokenType,
     pub start: usize,
@@ -69,7 +70,10 @@ pub struct Lexer<'a> {
 
 /// Represents error occured while scanning with provided error message and line on which it occured
 #[derive(Debug)]
-pub struct LexerError<'a>(pub &'a str, pub usize);
+pub struct LexerError<'a> {
+    pub message: &'a str,
+    pub line: usize,
+}
 
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
@@ -186,7 +190,10 @@ impl<'a> Lexer<'a> {
     }
 
     fn create_error(&self, message: &'a str) -> LexerError<'a> {
-        LexerError(message, self.line)
+        LexerError {
+            message,
+            line: self.line,
+        }
     }
 
     fn make_token(&self, token_type: TokenType) -> Token {

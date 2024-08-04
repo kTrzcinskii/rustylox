@@ -1,6 +1,6 @@
 use crate::{
     chunk::{Chunk, OperationCode, OperationCodeConversionError},
-    compiler,
+    compiler::Compiler,
     logger::Logger,
     value::{Value, ValueContainer},
 };
@@ -48,8 +48,17 @@ impl VirtualMachine {
     }
 
     pub fn interpret(&mut self, source: &str) -> InterpretResult {
-        compiler::compile(source);
-        InterpretResult::Ok
+        let mut compiler = Compiler::new(source);
+        match compiler.compile() {
+            Ok(chunk) => {
+                self.instruction_pointer = 0;
+                match self.run(&chunk) {
+                    Ok(_) => InterpretResult::Ok,
+                    Err(_) => InterpretResult::RuntimeError,
+                }
+            }
+            Err(_) => InterpretResult::CompileError,
+        }
     }
 
     fn run(&mut self, chunk: &Chunk) -> Result<InterpretResult, VirtualMachineError> {
