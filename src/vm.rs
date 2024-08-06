@@ -74,6 +74,7 @@ impl VirtualMachine {
                 OperationCode::Return => {
                     if let Some(value) = self.stack.pop() {
                         ValueContainer::print_value(&value);
+                        println!();
                     }
                     return Ok(InterpretResult::Ok);
                 }

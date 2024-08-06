@@ -3,6 +3,7 @@ use core::panic;
 use crate::{
     chunk::{Chunk, OperationCode},
     lexer::{Lexer, Token, TokenType},
+    logger::Logger,
     value::Value,
 };
 
@@ -17,6 +18,7 @@ pub struct Compiler<'a> {
 pub enum CompilerError {
     EmptyChunk,
     ParserInErrorState,
+    EmptyFunction,
 }
 
 impl<'a> Compiler<'a> {
@@ -35,12 +37,18 @@ impl<'a> Compiler<'a> {
         self.consume(TokenType::Eof, "Expect end of expression.");
 
         self.end_compiler();
+
+        if !self.parser.in_error_state {
+            Logger::disassemble_chunk(self.compiling_chunk.as_ref().unwrap(), "Compiled code")
+                .unwrap();
+        }
+
         match self.parser.in_error_state {
-            true => Ok(self
+            false => Ok(self
                 .compiling_chunk
                 .take()
                 .ok_or(CompilerError::EmptyChunk)?),
-            false => Err(CompilerError::ParserInErrorState),
+            true => Err(CompilerError::ParserInErrorState),
         }
     }
 
@@ -78,98 +86,100 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn call_prefix_function(&mut self, token_type: &TokenType) {
+    fn call_prefix_function(&mut self, token_type: &TokenType) -> Result<(), CompilerError> {
         match token_type {
             TokenType::LeftParen => self.handle_grouping(),
-            TokenType::RightParen => {}
-            TokenType::LeftBrace => {}
-            TokenType::RightBrace => {}
-            TokenType::Comma => {}
-            TokenType::Dot => {}
+            TokenType::RightParen => return Err(CompilerError::EmptyFunction),
+            TokenType::LeftBrace => return Err(CompilerError::EmptyFunction),
+            TokenType::RightBrace => return Err(CompilerError::EmptyFunction),
+            TokenType::Comma => return Err(CompilerError::EmptyFunction),
+            TokenType::Dot => return Err(CompilerError::EmptyFunction),
             TokenType::Minus => self.handle_unary(),
-            TokenType::Plus => {}
-            TokenType::Semicolon => {}
-            TokenType::Star => {}
-            TokenType::Slash => {}
-            TokenType::Bang => {}
-            TokenType::BangEqual => {}
-            TokenType::Equal => {}
-            TokenType::EqualEqual => {}
-            TokenType::Greater => {}
-            TokenType::GreaterEqual => {}
-            TokenType::Less => {}
-            TokenType::LessEqual => {}
-            TokenType::Identifier => {}
-            TokenType::String => {}
+            TokenType::Plus => return Err(CompilerError::EmptyFunction),
+            TokenType::Semicolon => return Err(CompilerError::EmptyFunction),
+            TokenType::Star => return Err(CompilerError::EmptyFunction),
+            TokenType::Slash => return Err(CompilerError::EmptyFunction),
+            TokenType::Bang => return Err(CompilerError::EmptyFunction),
+            TokenType::BangEqual => return Err(CompilerError::EmptyFunction),
+            TokenType::Equal => return Err(CompilerError::EmptyFunction),
+            TokenType::EqualEqual => return Err(CompilerError::EmptyFunction),
+            TokenType::Greater => return Err(CompilerError::EmptyFunction),
+            TokenType::GreaterEqual => return Err(CompilerError::EmptyFunction),
+            TokenType::Less => return Err(CompilerError::EmptyFunction),
+            TokenType::LessEqual => return Err(CompilerError::EmptyFunction),
+            TokenType::Identifier => return Err(CompilerError::EmptyFunction),
+            TokenType::String => return Err(CompilerError::EmptyFunction),
             TokenType::Number => self.handle_number(),
-            TokenType::And => {}
-            TokenType::Class => {}
-            TokenType::Else => {}
-            TokenType::False => {}
-            TokenType::For => {}
-            TokenType::Fun => {}
-            TokenType::If => {}
-            TokenType::Nil => {}
-            TokenType::Or => {}
-            TokenType::Print => {}
-            TokenType::Return => {}
-            TokenType::Super => {}
-            TokenType::This => {}
-            TokenType::True => {}
-            TokenType::Var => {}
-            TokenType::While => {}
-            TokenType::Eof => {}
+            TokenType::And => return Err(CompilerError::EmptyFunction),
+            TokenType::Class => return Err(CompilerError::EmptyFunction),
+            TokenType::Else => return Err(CompilerError::EmptyFunction),
+            TokenType::False => return Err(CompilerError::EmptyFunction),
+            TokenType::For => return Err(CompilerError::EmptyFunction),
+            TokenType::Fun => return Err(CompilerError::EmptyFunction),
+            TokenType::If => return Err(CompilerError::EmptyFunction),
+            TokenType::Nil => return Err(CompilerError::EmptyFunction),
+            TokenType::Or => return Err(CompilerError::EmptyFunction),
+            TokenType::Print => return Err(CompilerError::EmptyFunction),
+            TokenType::Return => return Err(CompilerError::EmptyFunction),
+            TokenType::Super => return Err(CompilerError::EmptyFunction),
+            TokenType::This => return Err(CompilerError::EmptyFunction),
+            TokenType::True => return Err(CompilerError::EmptyFunction),
+            TokenType::Var => return Err(CompilerError::EmptyFunction),
+            TokenType::While => return Err(CompilerError::EmptyFunction),
+            TokenType::Eof => return Err(CompilerError::EmptyFunction),
         }
+        Ok(())
     }
 
-    fn call_infix_function(&mut self, token_type: &TokenType) {
+    fn call_infix_function(&mut self, token_type: &TokenType) -> Result<(), CompilerError> {
         match token_type {
-            TokenType::LeftParen => {}
-            TokenType::RightParen => {}
-            TokenType::LeftBrace => {}
-            TokenType::RightBrace => {}
-            TokenType::Comma => {}
-            TokenType::Dot => {}
+            TokenType::LeftParen => return Err(CompilerError::EmptyFunction),
+            TokenType::RightParen => return Err(CompilerError::EmptyFunction),
+            TokenType::LeftBrace => return Err(CompilerError::EmptyFunction),
+            TokenType::RightBrace => return Err(CompilerError::EmptyFunction),
+            TokenType::Comma => return Err(CompilerError::EmptyFunction),
+            TokenType::Dot => return Err(CompilerError::EmptyFunction),
             TokenType::Minus => self.handle_binary(),
             TokenType::Plus => self.handle_binary(),
-            TokenType::Semicolon => {}
+            TokenType::Semicolon => return Err(CompilerError::EmptyFunction),
             TokenType::Star => self.handle_binary(),
             TokenType::Slash => self.handle_binary(),
-            TokenType::Bang => {}
-            TokenType::BangEqual => {}
-            TokenType::Equal => {}
-            TokenType::EqualEqual => {}
-            TokenType::Greater => {}
-            TokenType::GreaterEqual => {}
-            TokenType::Less => {}
-            TokenType::LessEqual => {}
-            TokenType::Identifier => {}
-            TokenType::String => {}
-            TokenType::Number => {}
-            TokenType::And => {}
-            TokenType::Class => {}
-            TokenType::Else => {}
-            TokenType::False => {}
-            TokenType::For => {}
-            TokenType::Fun => {}
-            TokenType::If => {}
-            TokenType::Nil => {}
-            TokenType::Or => {}
-            TokenType::Print => {}
-            TokenType::Return => {}
-            TokenType::Super => {}
-            TokenType::This => {}
-            TokenType::True => {}
-            TokenType::Var => {}
-            TokenType::While => {}
-            TokenType::Eof => {}
+            TokenType::Bang => return Err(CompilerError::EmptyFunction),
+            TokenType::BangEqual => return Err(CompilerError::EmptyFunction),
+            TokenType::Equal => return Err(CompilerError::EmptyFunction),
+            TokenType::EqualEqual => return Err(CompilerError::EmptyFunction),
+            TokenType::Greater => return Err(CompilerError::EmptyFunction),
+            TokenType::GreaterEqual => return Err(CompilerError::EmptyFunction),
+            TokenType::Less => return Err(CompilerError::EmptyFunction),
+            TokenType::LessEqual => return Err(CompilerError::EmptyFunction),
+            TokenType::Identifier => return Err(CompilerError::EmptyFunction),
+            TokenType::String => return Err(CompilerError::EmptyFunction),
+            TokenType::Number => return Err(CompilerError::EmptyFunction),
+            TokenType::And => return Err(CompilerError::EmptyFunction),
+            TokenType::Class => return Err(CompilerError::EmptyFunction),
+            TokenType::Else => return Err(CompilerError::EmptyFunction),
+            TokenType::False => return Err(CompilerError::EmptyFunction),
+            TokenType::For => return Err(CompilerError::EmptyFunction),
+            TokenType::Fun => return Err(CompilerError::EmptyFunction),
+            TokenType::If => return Err(CompilerError::EmptyFunction),
+            TokenType::Nil => return Err(CompilerError::EmptyFunction),
+            TokenType::Or => return Err(CompilerError::EmptyFunction),
+            TokenType::Print => return Err(CompilerError::EmptyFunction),
+            TokenType::Return => return Err(CompilerError::EmptyFunction),
+            TokenType::Super => return Err(CompilerError::EmptyFunction),
+            TokenType::This => return Err(CompilerError::EmptyFunction),
+            TokenType::True => return Err(CompilerError::EmptyFunction),
+            TokenType::Var => return Err(CompilerError::EmptyFunction),
+            TokenType::While => return Err(CompilerError::EmptyFunction),
+            TokenType::Eof => return Err(CompilerError::EmptyFunction),
         }
+        Ok(())
     }
 
     fn get_lexeme_from_token(&self, token: &Token) -> &'a str {
         let start_index = token.start;
         let end_index = start_index + token.length;
-        if end_index >= self.source.len() {
+        if end_index > self.source.len() {
             panic!("Token shouldn't use index outside of bounds.");
         }
         &self.source[start_index..end_index]
@@ -185,7 +195,7 @@ impl<'a> Compiler<'a> {
         } else {
             self.get_lexeme_from_token(token)
         };
-        eprint!("[line {}] Error at {}: {}", token.line, location, message);
+        eprintln!("[line {}] Error at '{}': {}", token.line, location, message);
         self.parser.in_error_state = true;
     }
 
@@ -273,7 +283,26 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn parse_precendence(&mut self, precedence: Precedence) {}
+    fn parse_precendence(&mut self, precedence: Precedence) {
+        self.advance();
+        let prefix_fn = self.call_prefix_function(&self.parser.previous.unwrap().token_type);
+        match prefix_fn {
+            Ok(_) => {
+                while precedence as u8
+                    <= Precedence::from(&self.parser.current.unwrap().token_type) as u8
+                {
+                    self.advance();
+                    match self.call_infix_function(&self.parser.previous.unwrap().token_type) {
+                        Ok(_) => {}
+                        Err(_) => panic!("Should never fail - we check precedence first"),
+                    }
+                }
+            }
+            Err(_) => {
+                self.handle_error_at_token(&self.parser.previous.unwrap(), "Expect expression.")
+            }
+        }
+    }
 
     fn compile_expression(&mut self) {
         self.parse_precendence(Precedence::Assignment);
@@ -368,9 +397,9 @@ impl From<&TokenType> for Precedence {
             TokenType::Dot => Precedence::None,
             TokenType::Minus => Precedence::Term,
             TokenType::Plus => Precedence::Term,
-            TokenType::Semicolon => Precedence::Factor,
+            TokenType::Semicolon => Precedence::None,
             TokenType::Star => Precedence::Factor,
-            TokenType::Slash => Precedence::None,
+            TokenType::Slash => Precedence::Factor,
             TokenType::Bang => Precedence::None,
             TokenType::BangEqual => Precedence::None,
             TokenType::Equal => Precedence::None,
