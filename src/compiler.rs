@@ -241,7 +241,7 @@ impl<'a> Compiler<'a> {
         // We assume the token with number was already consumed and is stored in "previous"
         let number_str = self.get_lexeme_from_token(&self.parser.previous.unwrap());
         match number_str.parse::<f64>() {
-            Ok(value) => self.emit_constant(value),
+            Ok(value) => self.emit_constant(Value::new_number(value)),
             Err(_) => self.handle_error_at_token(
                 &self.parser.previous.unwrap(),
                 "Couldn't parse provided number to double (f64)",

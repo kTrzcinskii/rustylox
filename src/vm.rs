@@ -2,7 +2,7 @@ use crate::{
     chunk::{Chunk, OperationCode, OperationCodeConversionError},
     compiler::Compiler,
     logger::Logger,
-    value::{Value, ValueContainer},
+    value::Value,
 };
 
 pub enum InterpretResult {
@@ -15,6 +15,8 @@ pub enum InterpretResult {
 pub enum VirtualMachineError {
     InvalidInstructionFormat(OperationCodeConversionError),
     EmptyStack,
+    StackOutOfBounds,
+    InvalidVariableType,
 }
 
 pub struct VirtualMachine {
@@ -73,8 +75,7 @@ impl VirtualMachine {
             match instruction {
                 OperationCode::Return => {
                     if let Some(value) = self.stack.pop() {
-                        ValueContainer::print_value(&value);
-                        println!();
+                        println!("{}", value);
                     }
                     return Ok(InterpretResult::Ok);
                 }
@@ -84,7 +85,13 @@ impl VirtualMachine {
                 }
                 OperationCode::Negate => {
                     let value = self.stack_pop()?;
-                    self.stack_push(-value);
+                    match Value::get_number(&value) {
+                        Ok(num_value) => self.stack_push(Value::new_number(-num_value)),
+                        Err(_) => {
+                            self.runtime_error_message("Operand must be a number", chunk);
+                            return Err(VirtualMachineError::InvalidVariableType);
+                        }
+                    }
                 }
                 OperationCode::Add => {
                     let args = self.read_binary_operation_arguments()?;
@@ -121,6 +128,22 @@ impl VirtualMachine {
 
     fn stack_pop(&mut self) -> Result<Value, VirtualMachineError> {
         self.stack.pop().ok_or(VirtualMachineError::EmptyStack)
+    }
+
+    fn stack_peek(&self, distance: usize) -> Result<&Value, VirtualMachineError> {
+        let index = self.stack.len() - 1 - distance;
+        if index < 0 {
+            return Err(VirtualMachineError::StackOutOfBounds);
+        }
+        Ok(&self.stack[index])
+    }
+
+    fn runtime_error_message(&mut self, message: &str, chunk: &Chunk) {
+        eprintln!("{}", message);
+
+        let line = chunk.read_line(self.instruction_pointer - 1);
+        eprintln!("[line {}] in script", line);
+        self.reset_stack();
     }
 }
 
