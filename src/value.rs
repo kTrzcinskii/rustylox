@@ -26,7 +26,7 @@ pub struct ValueInterpretingError {}
 impl Value {
     pub fn new_bool(value: bool) -> Value {
         Value {
-            value_type: ValueType::Number,
+            value_type: ValueType::Bool,
             actual_value: UnderlyingValue { boolean: value },
         }
     }
