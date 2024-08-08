@@ -67,6 +67,18 @@ impl Logger {
                 OperationCode::Divide => {
                     return Ok(Self::simple_instruction("OP_DIVIDE", offset, code))
                 }
+                OperationCode::Nil => {
+                    return Ok(Self::simple_instruction("OP_NIL", offset, code));
+                }
+                OperationCode::True => {
+                    return Ok(Self::simple_instruction("OP_TRUE", offset, code));
+                }
+                OperationCode::False => {
+                    return Ok(Self::simple_instruction("OP_FALSE", offset, code));
+                }
+                OperationCode::Not => {
+                    return Ok(Self::simple_instruction("OP_NOT", offset, code));
+                }
             }
         }
         Ok(0)

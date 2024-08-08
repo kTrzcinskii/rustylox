@@ -99,7 +99,7 @@ impl<'a> Compiler<'a> {
             TokenType::Semicolon => return Err(CompilerError::EmptyFunction),
             TokenType::Star => return Err(CompilerError::EmptyFunction),
             TokenType::Slash => return Err(CompilerError::EmptyFunction),
-            TokenType::Bang => return Err(CompilerError::EmptyFunction),
+            TokenType::Bang => self.handle_unary(),
             TokenType::BangEqual => return Err(CompilerError::EmptyFunction),
             TokenType::Equal => return Err(CompilerError::EmptyFunction),
             TokenType::EqualEqual => return Err(CompilerError::EmptyFunction),
@@ -113,17 +113,17 @@ impl<'a> Compiler<'a> {
             TokenType::And => return Err(CompilerError::EmptyFunction),
             TokenType::Class => return Err(CompilerError::EmptyFunction),
             TokenType::Else => return Err(CompilerError::EmptyFunction),
-            TokenType::False => return Err(CompilerError::EmptyFunction),
+            TokenType::False => self.handle_literal(),
             TokenType::For => return Err(CompilerError::EmptyFunction),
             TokenType::Fun => return Err(CompilerError::EmptyFunction),
             TokenType::If => return Err(CompilerError::EmptyFunction),
-            TokenType::Nil => return Err(CompilerError::EmptyFunction),
+            TokenType::Nil => self.handle_literal(),
             TokenType::Or => return Err(CompilerError::EmptyFunction),
             TokenType::Print => return Err(CompilerError::EmptyFunction),
             TokenType::Return => return Err(CompilerError::EmptyFunction),
             TokenType::Super => return Err(CompilerError::EmptyFunction),
             TokenType::This => return Err(CompilerError::EmptyFunction),
-            TokenType::True => return Err(CompilerError::EmptyFunction),
+            TokenType::True => self.handle_literal(),
             TokenType::Var => return Err(CompilerError::EmptyFunction),
             TokenType::While => return Err(CompilerError::EmptyFunction),
             TokenType::Eof => return Err(CompilerError::EmptyFunction),
@@ -263,6 +263,7 @@ impl<'a> Compiler<'a> {
 
         match operator_type {
             TokenType::Minus => self.emit_instruction(OperationCode::Negate),
+            TokenType::Bang => self.emit_instruction(OperationCode::Not),
             _ => panic!("unreachable"),
         }
     }
@@ -280,6 +281,15 @@ impl<'a> Compiler<'a> {
             TokenType::Star => self.emit_instruction(OperationCode::Multiply),
             TokenType::Slash => self.emit_instruction(OperationCode::Divide),
             _ => panic!("unreachable"),
+        }
+    }
+
+    fn handle_literal(&mut self) {
+        match self.parser.previous.unwrap().token_type {
+            TokenType::Nil => self.emit_instruction(OperationCode::Nil),
+            TokenType::True => self.emit_instruction(OperationCode::True),
+            TokenType::False => self.emit_instruction(OperationCode::False),
+            _ => panic!("Unreachable"),
         }
     }
 

@@ -142,6 +142,13 @@ impl VirtualMachine {
                         Err(_) => panic!("Shouldn't raise any other type of error"),
                     }
                 }
+                OperationCode::Nil => self.stack_push(Value::new_nil()),
+                OperationCode::True => self.stack_push(Value::new_bool(true)),
+                OperationCode::False => self.stack_push(Value::new_bool(false)),
+                OperationCode::Not => {
+                    let value = self.stack_pop()?;
+                    self.stack_push(Value::new_bool(value.is_falsey()));
+                }
             }
         }
     }

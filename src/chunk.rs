@@ -4,6 +4,10 @@ pub enum OperationCode {
     Return,
     /// Load constant operation, arguments: (constant index in `ValueContainer`)
     Constant(usize),
+    Nil,
+    True,
+    False,
+    Not,
     Negate,
     Add,
     Substract,
@@ -21,6 +25,10 @@ impl OperationCode {
             OperationCode::Substract => 1,
             OperationCode::Multiply => 1,
             OperationCode::Divide => 1,
+            OperationCode::Nil => 1,
+            OperationCode::True => 1,
+            OperationCode::False => 1,
+            OperationCode::Not => 1,
         }
     }
 }
@@ -35,6 +43,10 @@ impl From<OperationCode> for u8 {
             OperationCode::Substract => 4,
             OperationCode::Multiply => 5,
             OperationCode::Divide => 6,
+            OperationCode::Nil => 7,
+            OperationCode::True => 8,
+            OperationCode::False => 9,
+            OperationCode::Not => 10,
         }
     }
 }
@@ -51,6 +63,10 @@ impl From<OperationCode> for Vec<u8> {
             OperationCode::Substract => vec![u8::from(OperationCode::Substract)],
             OperationCode::Multiply => vec![u8::from(OperationCode::Multiply)],
             OperationCode::Divide => vec![u8::from(OperationCode::Divide)],
+            OperationCode::Nil => vec![u8::from(OperationCode::Nil)],
+            OperationCode::True => vec![u8::from(OperationCode::True)],
+            OperationCode::False => vec![u8::from(OperationCode::False)],
+            OperationCode::Not => vec![u8::from(OperationCode::Not)],
         }
     }
 }
@@ -86,6 +102,10 @@ impl TryFrom<&[u8]> for OperationCode {
             4 => Ok(OperationCode::Substract),
             5 => Ok(OperationCode::Multiply),
             6 => Ok(OperationCode::Divide),
+            7 => Ok(OperationCode::Nil),
+            8 => Ok(OperationCode::True),
+            9 => Ok(OperationCode::False),
+            10 => Ok(OperationCode::Not),
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
     }

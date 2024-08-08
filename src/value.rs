@@ -70,6 +70,14 @@ impl Value {
     pub fn is_nil(value: &Value) -> bool {
         value.value_type == ValueType::Nil
     }
+
+    pub fn is_falsey(&self) -> bool {
+        match self.value_type {
+            ValueType::Bool => !Self::get_bool(self).unwrap(),
+            ValueType::Nil => true,
+            ValueType::Number => false,
+        }
+    }
 }
 
 impl fmt::Display for Value {
