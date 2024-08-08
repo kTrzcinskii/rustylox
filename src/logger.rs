@@ -79,6 +79,15 @@ impl Logger {
                 OperationCode::Not => {
                     return Ok(Self::simple_instruction("OP_NOT", offset, code));
                 }
+                OperationCode::Equal => {
+                    return Ok(Self::simple_instruction("OP_EQUAL", offset, code));
+                }
+                OperationCode::Greater => {
+                    return Ok(Self::simple_instruction("OP_GREATER", offset, code));
+                }
+                OperationCode::Less => {
+                    return Ok(Self::simple_instruction("OP_LESS", offset, code));
+                }
             }
         }
         Ok(0)

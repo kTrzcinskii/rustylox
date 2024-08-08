@@ -149,6 +149,34 @@ impl VirtualMachine {
                     let value = self.stack_pop()?;
                     self.stack_push(Value::new_bool(value.is_falsey()));
                 }
+                OperationCode::Equal => {
+                    let args = self.read_binary_operation_arguments()?;
+                    self.stack_push(Value::new_bool(Value::are_values_equal(
+                        &args.lhs, &args.rhs,
+                    )))
+                }
+                OperationCode::Greater => {
+                    let args = self.read_binary_operation_arguments()?;
+                    match self.compare_greater(&args.lhs, &args.rhs) {
+                        Ok(value) => self.stack_push(Value::new_bool(value)),
+                        Err(VirtualMachineError::InvalidVariableType) => {
+                            self.runtime_error_message("Both operands must be numbers", chunk);
+                            return Err(VirtualMachineError::InvalidVariableType);
+                        }
+                        Err(_) => panic!("Shouldn't raise any other type of error"),
+                    }
+                }
+                OperationCode::Less => {
+                    let args = self.read_binary_operation_arguments()?;
+                    match self.compare_less(&args.lhs, &args.rhs) {
+                        Ok(value) => self.stack_push(Value::new_bool(value)),
+                        Err(VirtualMachineError::InvalidVariableType) => {
+                            self.runtime_error_message("Both operands must be numbers", chunk);
+                            return Err(VirtualMachineError::InvalidVariableType);
+                        }
+                        Err(_) => panic!("Shouldn't raise any other type of error"),
+                    }
+                }
             }
         }
     }
@@ -216,6 +244,18 @@ impl VirtualMachine {
         }
 
         Ok(Value::new_number(lhs - rhs))
+    }
+
+    fn compare_greater(&self, lhs: &Value, rhs: &Value) -> Result<bool, VirtualMachineError> {
+        let lhs = Value::get_number(lhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let rhs = Value::get_number(rhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        Ok(lhs > rhs)
+    }
+
+    fn compare_less(&self, lhs: &Value, rhs: &Value) -> Result<bool, VirtualMachineError> {
+        let lhs = Value::get_number(lhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let rhs = Value::get_number(rhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        Ok(lhs < rhs)
     }
 }
 

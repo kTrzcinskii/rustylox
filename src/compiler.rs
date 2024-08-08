@@ -145,13 +145,13 @@ impl<'a> Compiler<'a> {
             TokenType::Star => self.handle_binary(),
             TokenType::Slash => self.handle_binary(),
             TokenType::Bang => return Err(CompilerError::EmptyFunction),
-            TokenType::BangEqual => return Err(CompilerError::EmptyFunction),
+            TokenType::BangEqual => self.handle_binary(),
             TokenType::Equal => return Err(CompilerError::EmptyFunction),
-            TokenType::EqualEqual => return Err(CompilerError::EmptyFunction),
-            TokenType::Greater => return Err(CompilerError::EmptyFunction),
-            TokenType::GreaterEqual => return Err(CompilerError::EmptyFunction),
-            TokenType::Less => return Err(CompilerError::EmptyFunction),
-            TokenType::LessEqual => return Err(CompilerError::EmptyFunction),
+            TokenType::EqualEqual => self.handle_binary(),
+            TokenType::Greater => self.handle_binary(),
+            TokenType::GreaterEqual => self.handle_binary(),
+            TokenType::Less => self.handle_binary(),
+            TokenType::LessEqual => self.handle_binary(),
             TokenType::Identifier => return Err(CompilerError::EmptyFunction),
             TokenType::String => return Err(CompilerError::EmptyFunction),
             TokenType::Number => return Err(CompilerError::EmptyFunction),
@@ -210,6 +210,11 @@ impl<'a> Compiler<'a> {
             .as_mut()
             .unwrap()
             .add_instruction(instruction, line);
+    }
+
+    fn emit_double_instruction(&mut self, first: OperationCode, second: OperationCode) {
+        self.emit_instruction(first);
+        self.emit_instruction(second);
     }
 
     fn emit_constant(&mut self, constant: Value) {
@@ -280,6 +285,18 @@ impl<'a> Compiler<'a> {
             TokenType::Minus => self.emit_instruction(OperationCode::Substract),
             TokenType::Star => self.emit_instruction(OperationCode::Multiply),
             TokenType::Slash => self.emit_instruction(OperationCode::Divide),
+            TokenType::BangEqual => {
+                self.emit_double_instruction(OperationCode::Equal, OperationCode::Not)
+            }
+            TokenType::EqualEqual => self.emit_instruction(OperationCode::Equal),
+            TokenType::Greater => self.emit_instruction(OperationCode::Greater),
+            TokenType::GreaterEqual => {
+                self.emit_double_instruction(OperationCode::Less, OperationCode::Not)
+            }
+            TokenType::Less => self.emit_instruction(OperationCode::Less),
+            TokenType::LessEqual => {
+                self.emit_double_instruction(OperationCode::Greater, OperationCode::Not)
+            }
             _ => panic!("unreachable"),
         }
     }
@@ -411,13 +428,13 @@ impl From<&TokenType> for Precedence {
             TokenType::Star => Precedence::Factor,
             TokenType::Slash => Precedence::Factor,
             TokenType::Bang => Precedence::None,
-            TokenType::BangEqual => Precedence::None,
+            TokenType::BangEqual => Precedence::Equality,
             TokenType::Equal => Precedence::None,
-            TokenType::EqualEqual => Precedence::None,
-            TokenType::Greater => Precedence::None,
-            TokenType::GreaterEqual => Precedence::None,
-            TokenType::Less => Precedence::None,
-            TokenType::LessEqual => Precedence::None,
+            TokenType::EqualEqual => Precedence::Equality,
+            TokenType::Greater => Precedence::Equality,
+            TokenType::GreaterEqual => Precedence::Equality,
+            TokenType::Less => Precedence::Equality,
+            TokenType::LessEqual => Precedence::Equality,
             TokenType::Identifier => Precedence::None,
             TokenType::String => Precedence::None,
             TokenType::Number => Precedence::None,

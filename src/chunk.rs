@@ -13,6 +13,9 @@ pub enum OperationCode {
     Substract,
     Multiply,
     Divide,
+    Equal,
+    Greater,
+    Less,
 }
 
 impl OperationCode {
@@ -29,6 +32,9 @@ impl OperationCode {
             OperationCode::True => 1,
             OperationCode::False => 1,
             OperationCode::Not => 1,
+            OperationCode::Equal => 1,
+            OperationCode::Greater => 1,
+            OperationCode::Less => 1,
         }
     }
 }
@@ -47,6 +53,9 @@ impl From<OperationCode> for u8 {
             OperationCode::True => 8,
             OperationCode::False => 9,
             OperationCode::Not => 10,
+            OperationCode::Equal => 11,
+            OperationCode::Greater => 12,
+            OperationCode::Less => 13,
         }
     }
 }
@@ -67,6 +76,9 @@ impl From<OperationCode> for Vec<u8> {
             OperationCode::True => vec![u8::from(OperationCode::True)],
             OperationCode::False => vec![u8::from(OperationCode::False)],
             OperationCode::Not => vec![u8::from(OperationCode::Not)],
+            OperationCode::Equal => vec![u8::from(OperationCode::Equal)],
+            OperationCode::Greater => vec![u8::from(OperationCode::Greater)],
+            OperationCode::Less => vec![u8::from(OperationCode::Less)],
         }
     }
 }
@@ -106,6 +118,9 @@ impl TryFrom<&[u8]> for OperationCode {
             8 => Ok(OperationCode::True),
             9 => Ok(OperationCode::False),
             10 => Ok(OperationCode::Not),
+            11 => Ok(OperationCode::Equal),
+            12 => Ok(OperationCode::Greater),
+            13 => Ok(OperationCode::Less),
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
     }

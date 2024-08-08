@@ -78,6 +78,17 @@ impl Value {
             ValueType::Number => false,
         }
     }
+
+    pub fn are_values_equal(lhs: &Value, rhs: &Value) -> bool {
+        if lhs.value_type != rhs.value_type {
+            return false;
+        }
+        match lhs.value_type {
+            ValueType::Bool => Self::get_bool(lhs).unwrap() == Self::get_bool(rhs).unwrap(),
+            ValueType::Nil => true,
+            ValueType::Number => Self::get_number(lhs).unwrap() == Self::get_number(rhs).unwrap(),
+        }
+    }
 }
 
 impl fmt::Display for Value {
