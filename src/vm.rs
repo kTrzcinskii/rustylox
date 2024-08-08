@@ -17,6 +17,7 @@ pub enum VirtualMachineError {
     EmptyStack,
     StackOutOfBounds,
     InvalidVariableType,
+    DivideByZero,
 }
 
 pub struct VirtualMachine {
@@ -95,20 +96,51 @@ impl VirtualMachine {
                 }
                 OperationCode::Add => {
                     let args = self.read_binary_operation_arguments()?;
-                    self.stack_push(args.lhs + args.rhs);
+                    match self.add_numbers(&args.lhs, &args.rhs) {
+                        Ok(value) => self.stack_push(value),
+                        Err(VirtualMachineError::InvalidVariableType) => {
+                            self.runtime_error_message("Both operands must be numbers", chunk);
+                            return Err(VirtualMachineError::InvalidVariableType);
+                        }
+                        Err(_) => panic!("Shouldn't raise any other type of error"),
+                    }
                 }
                 OperationCode::Substract => {
                     let args = self.read_binary_operation_arguments()?;
-                    self.stack_push(args.lhs - args.rhs);
+                    match self.substract_numbers(&args.lhs, &args.rhs) {
+                        Ok(value) => self.stack_push(value),
+                        Err(VirtualMachineError::InvalidVariableType) => {
+                            self.runtime_error_message("Both operands must be numbers", chunk);
+                            return Err(VirtualMachineError::InvalidVariableType);
+                        }
+                        Err(_) => panic!("Shouldn't raise any other type of error"),
+                    }
                 }
                 OperationCode::Multiply => {
                     let args = self.read_binary_operation_arguments()?;
-                    self.stack_push(args.lhs * args.rhs);
+                    match self.multiply_numbers(&args.lhs, &args.rhs) {
+                        Ok(value) => self.stack_push(value),
+                        Err(VirtualMachineError::InvalidVariableType) => {
+                            self.runtime_error_message("Both operands must be numbers", chunk);
+                            return Err(VirtualMachineError::InvalidVariableType);
+                        }
+                        Err(_) => panic!("Shouldn't raise any other type of error"),
+                    }
                 }
                 OperationCode::Divide => {
-                    //TODO: handle dividing by 0 (which should be impossible if our frontend runs correctly...)
                     let args = self.read_binary_operation_arguments()?;
-                    self.stack_push(args.lhs / args.rhs);
+                    match self.divide_numbers(&args.lhs, &args.rhs) {
+                        Ok(value) => self.stack_push(value),
+                        Err(VirtualMachineError::InvalidVariableType) => {
+                            self.runtime_error_message("Both operands must be numbers", chunk);
+                            return Err(VirtualMachineError::InvalidVariableType);
+                        }
+                        Err(VirtualMachineError::DivideByZero) => {
+                            self.runtime_error_message("You cannot divide by 0", chunk);
+                            return Err(VirtualMachineError::DivideByZero);
+                        }
+                        Err(_) => panic!("Shouldn't raise any other type of error"),
+                    }
                 }
             }
         }
@@ -132,7 +164,7 @@ impl VirtualMachine {
 
     fn stack_peek(&self, distance: usize) -> Result<&Value, VirtualMachineError> {
         let index = self.stack.len() - 1 - distance;
-        if index < 0 {
+        if self.stack.len() < 1 + distance {
             return Err(VirtualMachineError::StackOutOfBounds);
         }
         Ok(&self.stack[index])
@@ -143,7 +175,40 @@ impl VirtualMachine {
 
         let line = chunk.read_line(self.instruction_pointer - 1);
         eprintln!("[line {}] in script", line);
-        self.reset_stack();
+        self.reset();
+    }
+
+    fn add_numbers(&mut self, lhs: &Value, rhs: &Value) -> Result<Value, VirtualMachineError> {
+        let lhs = Value::get_number(lhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let rhs = Value::get_number(rhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        Ok(Value::new_number(lhs + rhs))
+    }
+
+    fn substract_numbers(
+        &mut self,
+        lhs: &Value,
+        rhs: &Value,
+    ) -> Result<Value, VirtualMachineError> {
+        let lhs = Value::get_number(lhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let rhs = Value::get_number(rhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        Ok(Value::new_number(lhs - rhs))
+    }
+
+    fn multiply_numbers(&mut self, lhs: &Value, rhs: &Value) -> Result<Value, VirtualMachineError> {
+        let lhs = Value::get_number(lhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let rhs = Value::get_number(rhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        Ok(Value::new_number(lhs * rhs))
+    }
+
+    fn divide_numbers(&mut self, lhs: &Value, rhs: &Value) -> Result<Value, VirtualMachineError> {
+        let lhs = Value::get_number(lhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let rhs = Value::get_number(rhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+
+        if rhs == 0.0 {
+            return Err(VirtualMachineError::DivideByZero);
+        }
+
+        Ok(Value::new_number(lhs - rhs))
     }
 }
 

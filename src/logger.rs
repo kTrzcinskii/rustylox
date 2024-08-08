@@ -75,7 +75,11 @@ impl Logger {
     pub fn show_stack_content(stack: &[Value]) {
         #[cfg(feature = "log_trace_execution")]
         {
-            println!("{:?}", stack);
+            print!("[ ");
+            for v in stack {
+                print!("{} ", v);
+            }
+            println!("]");
         }
     }
 
@@ -93,8 +97,7 @@ impl Logger {
         constant_value: Value,
     ) -> usize {
         print!("{:<16} {:>4} '", name, constant_index);
-        ValueContainer::print_value(&constant_value);
-        println!();
+        println!("{}", &constant_value);
         offset
             + OperationCode::get_instruction_bytes_length(&OperationCode::Constant(constant_index))
     }
