@@ -127,7 +127,7 @@ impl<'a> Lexer<'a> {
                 return Ok(self.handle_one_or_two_character_token(
                     '=',
                     TokenType::BangEqual,
-                    TokenType::Equal,
+                    TokenType::Bang,
                 ))
             }
             '=' => {
