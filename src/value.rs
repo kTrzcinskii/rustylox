@@ -1,5 +1,5 @@
 use core::fmt;
-use std::mem::ManuallyDrop;
+use std::{cell::RefCell, mem::ManuallyDrop, rc::Rc};
 
 #[derive(Clone, Copy, PartialEq)]
 enum ValueType {
@@ -41,7 +41,7 @@ impl fmt::Display for HeapObject {
 union UnderlyingValue {
     boolean: bool,
     number: f64,
-    object: ManuallyDrop<Box<HeapObject>>,
+    object: ManuallyDrop<Rc<RefCell<HeapObject>>>,
 }
 
 pub struct Value {
@@ -104,7 +104,7 @@ impl Value {
         Value {
             value_type: ValueType::HeapObject,
             actual_value: UnderlyingValue {
-                object: ManuallyDrop::new(Box::new(value)),
+                object: ManuallyDrop::new(Rc::new(RefCell::new(value))),
             },
         }
     }
@@ -113,9 +113,9 @@ impl Value {
         self.value_type == ValueType::HeapObject
     }
 
-    pub fn get_heap_object(&self) -> Result<&HeapObject, ValueInterpretingError> {
+    pub fn get_heap_object(&self) -> Result<&Rc<RefCell<HeapObject>>, ValueInterpretingError> {
         match self.value_type {
-            ValueType::HeapObject => unsafe { Ok(&*(*self.actual_value.object)) },
+            ValueType::HeapObject => unsafe { Ok(&self.actual_value.object) },
             _ => Err(ValueInterpretingError {}),
         }
     }
@@ -150,7 +150,7 @@ impl Value {
                 let rhs_unwrap = rhs
                     .get_heap_object()
                     .expect("HeapObject type should contain heap object");
-                HeapObject::are_objects_equal(lhs_unwrap, rhs_unwrap)
+                HeapObject::are_objects_equal(&lhs_unwrap.borrow(), &rhs_unwrap.borrow())
             }
         }
     }
@@ -169,11 +169,11 @@ impl Clone for Value {
                     .expect("Number type type should contain number"),
             },
             ValueType::HeapObject => UnderlyingValue {
-                object: ManuallyDrop::new(Box::new(
+                object: ManuallyDrop::new(
                     self.get_heap_object()
                         .expect("HeapObject type should contain heap object")
                         .clone(),
-                )),
+                ),
             },
         };
         Self {
@@ -213,6 +213,7 @@ impl fmt::Display for Value {
                 "{}",
                 self.get_heap_object()
                     .expect("HeapObject type should contain heap object")
+                    .borrow()
             ),
         }
     }
