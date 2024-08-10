@@ -1,20 +1,49 @@
 use core::fmt;
+use std::mem::ManuallyDrop;
 
 #[derive(Clone, Copy, PartialEq)]
 enum ValueType {
     Bool,
     Nil,
     Number,
+    HeapObject,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
+pub struct StringObject {
+    value: String,
+}
+
+#[derive(Clone)]
+pub enum HeapObject {
+    String(StringObject),
+}
+
+impl HeapObject {
+    pub fn are_objects_equal(lhs: &HeapObject, rhs: &HeapObject) -> bool {
+        match (lhs, rhs) {
+            (HeapObject::String(lsh_string_object), HeapObject::String(rhs_string_object)) => {
+                lsh_string_object.value == rhs_string_object.value
+            }
+        }
+    }
+}
+
+impl fmt::Display for HeapObject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HeapObject::String(string_object) => write!(f, "{}", string_object.value),
+        }
+    }
+}
+
 #[repr(C)]
 union UnderlyingValue {
     boolean: bool,
     number: f64,
+    object: ManuallyDrop<Box<HeapObject>>,
 }
 
-#[derive(Clone, Copy)]
 pub struct Value {
     value_type: ValueType,
     actual_value: UnderlyingValue,
@@ -31,13 +60,13 @@ impl Value {
         }
     }
 
-    pub fn is_bool(value: &Value) -> bool {
-        value.value_type == ValueType::Bool
+    pub fn is_bool(&self) -> bool {
+        self.value_type == ValueType::Bool
     }
 
-    pub fn get_bool(value: &Value) -> Result<bool, ValueInterpretingError> {
-        match value.value_type {
-            ValueType::Bool => unsafe { Ok(value.actual_value.boolean) },
+    pub fn get_bool(&self) -> Result<bool, ValueInterpretingError> {
+        match self.value_type {
+            ValueType::Bool => unsafe { Ok(self.actual_value.boolean) },
             _ => Err(ValueInterpretingError {}),
         }
     }
@@ -49,13 +78,13 @@ impl Value {
         }
     }
 
-    pub fn is_number(value: &Value) -> bool {
-        value.value_type == ValueType::Number
+    pub fn is_number(&self) -> bool {
+        self.value_type == ValueType::Number
     }
 
-    pub fn get_number(value: &Value) -> Result<f64, ValueInterpretingError> {
-        match value.value_type {
-            ValueType::Number => unsafe { Ok(value.actual_value.number) },
+    pub fn get_number(&self) -> Result<f64, ValueInterpretingError> {
+        match self.value_type {
+            ValueType::Number => unsafe { Ok(self.actual_value.number) },
             _ => Err(ValueInterpretingError {}),
         }
     }
@@ -67,15 +96,36 @@ impl Value {
         }
     }
 
-    pub fn is_nil(value: &Value) -> bool {
-        value.value_type == ValueType::Nil
+    pub fn is_nil(&self) -> bool {
+        self.value_type == ValueType::Nil
+    }
+
+    pub fn new_heap_object(value: HeapObject) -> Value {
+        Value {
+            value_type: ValueType::HeapObject,
+            actual_value: UnderlyingValue {
+                object: ManuallyDrop::new(Box::new(value)),
+            },
+        }
+    }
+
+    pub fn is_heap_object(&self) -> bool {
+        self.value_type == ValueType::HeapObject
+    }
+
+    pub fn get_heap_object(&self) -> Result<&HeapObject, ValueInterpretingError> {
+        match self.value_type {
+            ValueType::HeapObject => unsafe { Ok(&*(*self.actual_value.object)) },
+            _ => Err(ValueInterpretingError {}),
+        }
     }
 
     pub fn is_falsey(&self) -> bool {
         match self.value_type {
-            ValueType::Bool => !Self::get_bool(self).unwrap(),
+            ValueType::Bool => !self.get_bool().expect("Bool type should contain bool"),
             ValueType::Nil => true,
             ValueType::Number => false,
+            ValueType::HeapObject => true,
         }
     }
 
@@ -84,9 +134,61 @@ impl Value {
             return false;
         }
         match lhs.value_type {
-            ValueType::Bool => Self::get_bool(lhs).unwrap() == Self::get_bool(rhs).unwrap(),
+            ValueType::Bool => {
+                lhs.get_bool().expect("Bool type should contain bool")
+                    == rhs.get_bool().expect("Bool type should contain bool")
+            }
             ValueType::Nil => true,
-            ValueType::Number => Self::get_number(lhs).unwrap() == Self::get_number(rhs).unwrap(),
+            ValueType::Number => {
+                lhs.get_number().expect("Number type should contain number")
+                    == rhs.get_number().expect("Number type should contain number")
+            }
+            ValueType::HeapObject => {
+                let lhs_unwrap = lhs
+                    .get_heap_object()
+                    .expect("HeapObject type should contain heap object");
+                let rhs_unwrap = rhs
+                    .get_heap_object()
+                    .expect("HeapObject type should contain heap object");
+                HeapObject::are_objects_equal(lhs_unwrap, rhs_unwrap)
+            }
+        }
+    }
+}
+
+impl Clone for Value {
+    fn clone(&self) -> Self {
+        let actual_value_clone = match self.value_type {
+            ValueType::Bool => UnderlyingValue {
+                boolean: self.get_bool().expect("Bool type should contain bool"),
+            },
+            ValueType::Nil => UnderlyingValue { number: 0.0 },
+            ValueType::Number => UnderlyingValue {
+                number: self
+                    .get_number()
+                    .expect("Number type type should contain number"),
+            },
+            ValueType::HeapObject => UnderlyingValue {
+                object: ManuallyDrop::new(Box::new(
+                    self.get_heap_object()
+                        .expect("HeapObject type should contain heap object")
+                        .clone(),
+                )),
+            },
+        };
+        Self {
+            value_type: self.value_type,
+            actual_value: actual_value_clone,
+        }
+    }
+}
+
+impl Drop for Value {
+    fn drop(&mut self) {
+        if self.is_heap_object() {
+            unsafe {
+                ManuallyDrop::drop(&mut self.actual_value.object);
+            }
         }
     }
 }
@@ -94,9 +196,24 @@ impl Value {
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.value_type {
-            ValueType::Bool => write!(f, "{}", Self::get_bool(self).unwrap()),
+            ValueType::Bool => write!(
+                f,
+                "{}",
+                self.get_bool().expect("Bool type should contain bool")
+            ),
             ValueType::Nil => write!(f, "NIL"),
-            ValueType::Number => write!(f, "{}", Self::get_number(self).unwrap()),
+            ValueType::Number => write!(
+                f,
+                "{}",
+                self.get_number()
+                    .expect("Number type should contain number")
+            ),
+            ValueType::HeapObject => write!(
+                f,
+                "{}",
+                self.get_heap_object()
+                    .expect("HeapObject type should contain heap object")
+            ),
         }
     }
 }
@@ -124,7 +241,7 @@ impl ValueContainer {
     }
 
     pub fn get_value(&self, offset: usize) -> Value {
-        self.values[offset]
+        self.values[offset].clone()
     }
 }
 

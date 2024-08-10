@@ -197,13 +197,14 @@ impl VirtualMachine {
         self.stack.pop().ok_or(VirtualMachineError::EmptyStack)
     }
 
-    fn stack_peek(&self, distance: usize) -> Result<&Value, VirtualMachineError> {
-        let index = self.stack.len() - 1 - distance;
-        if self.stack.len() < 1 + distance {
-            return Err(VirtualMachineError::StackOutOfBounds);
-        }
-        Ok(&self.stack[index])
-    }
+    // TODO: decide if this is actually needed (probably can be removed)
+    // fn stack_peek(&self, distance: usize) -> Result<&Value, VirtualMachineError> {
+    //     let index = self.stack.len() - 1 - distance;
+    //     if self.stack.len() < 1 + distance {
+    //         return Err(VirtualMachineError::StackOutOfBounds);
+    //     }
+    //     Ok(&self.stack[index])
+    // }
 
     fn runtime_error_message(&mut self, message: &str, chunk: &Chunk) {
         eprintln!("{}", message);
@@ -214,8 +215,12 @@ impl VirtualMachine {
     }
 
     fn add_numbers(&mut self, lhs: &Value, rhs: &Value) -> Result<Value, VirtualMachineError> {
-        let lhs = Value::get_number(lhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
-        let rhs = Value::get_number(rhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let lhs = lhs
+            .get_number()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let rhs = rhs
+            .get_number()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?;
         Ok(Value::new_number(lhs + rhs))
     }
 
@@ -224,37 +229,57 @@ impl VirtualMachine {
         lhs: &Value,
         rhs: &Value,
     ) -> Result<Value, VirtualMachineError> {
-        let lhs = Value::get_number(lhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
-        let rhs = Value::get_number(rhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let lhs = lhs
+            .get_number()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let rhs = rhs
+            .get_number()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?;
         Ok(Value::new_number(lhs - rhs))
     }
 
     fn multiply_numbers(&mut self, lhs: &Value, rhs: &Value) -> Result<Value, VirtualMachineError> {
-        let lhs = Value::get_number(lhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
-        let rhs = Value::get_number(rhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let lhs = lhs
+            .get_number()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let rhs = rhs
+            .get_number()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?;
         Ok(Value::new_number(lhs * rhs))
     }
 
     fn divide_numbers(&mut self, lhs: &Value, rhs: &Value) -> Result<Value, VirtualMachineError> {
-        let lhs = Value::get_number(lhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
-        let rhs = Value::get_number(rhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let lhs = lhs
+            .get_number()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let rhs = rhs
+            .get_number()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?;
 
         if rhs == 0.0 {
             return Err(VirtualMachineError::DivideByZero);
         }
 
-        Ok(Value::new_number(lhs - rhs))
+        Ok(Value::new_number(lhs / rhs))
     }
 
     fn compare_greater(&self, lhs: &Value, rhs: &Value) -> Result<bool, VirtualMachineError> {
-        let lhs = Value::get_number(lhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
-        let rhs = Value::get_number(rhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let lhs = lhs
+            .get_number()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let rhs = rhs
+            .get_number()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?;
         Ok(lhs > rhs)
     }
 
     fn compare_less(&self, lhs: &Value, rhs: &Value) -> Result<bool, VirtualMachineError> {
-        let lhs = Value::get_number(lhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
-        let rhs = Value::get_number(rhs).map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let lhs = lhs
+            .get_number()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        let rhs = rhs
+            .get_number()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?;
         Ok(lhs < rhs)
     }
 }
