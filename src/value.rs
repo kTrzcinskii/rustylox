@@ -2,7 +2,7 @@ use core::fmt;
 use std::{cell::RefCell, mem::ManuallyDrop, rc::Rc};
 
 #[derive(Clone, Copy, PartialEq)]
-enum ValueType {
+pub enum ValueType {
     Bool,
     Nil,
     Number,
@@ -19,6 +19,10 @@ impl StringObject {
         Self {
             value: value.into(),
         }
+    }
+
+    pub fn get_value(&self) -> &str {
+        &self.value
     }
 }
 
@@ -126,6 +130,10 @@ impl Value {
             ValueType::HeapObject => unsafe { Ok(&self.actual_value.object) },
             _ => Err(ValueInterpretingError {}),
         }
+    }
+
+    pub fn get_type(&self) -> ValueType {
+        self.value_type
     }
 
     pub fn is_falsey(&self) -> bool {

@@ -2,7 +2,7 @@ use crate::{
     chunk::{Chunk, OperationCode, OperationCodeConversionError},
     compiler::Compiler,
     logger::Logger,
-    value::Value,
+    value::{HeapObject, StringObject, Value, ValueType},
 };
 
 pub enum InterpretResult {
@@ -96,13 +96,37 @@ impl VirtualMachine {
                 }
                 OperationCode::Add => {
                     let args = self.read_binary_operation_arguments()?;
-                    match self.add_numbers(&args.lhs, &args.rhs) {
-                        Ok(value) => self.stack_push(value),
-                        Err(VirtualMachineError::InvalidVariableType) => {
-                            self.runtime_error_message("Both operands must be numbers", chunk);
+
+                    match args.lhs.get_type() {
+                        ValueType::Number => match self.add_numbers(&args.lhs, &args.rhs) {
+                            Ok(value) => self.stack_push(value),
+                            Err(VirtualMachineError::InvalidVariableType) => {
+                                self.runtime_error_message(
+                                    "Both operands must be numbers or strings",
+                                    chunk,
+                                );
+                                return Err(VirtualMachineError::InvalidVariableType);
+                            }
+                            Err(_) => panic!("Shouldn't raise any other type of error"),
+                        },
+                        ValueType::HeapObject => match self.add_strings(&args.lhs, &args.rhs) {
+                            Ok(value) => self.stack_push(value),
+                            Err(VirtualMachineError::InvalidVariableType) => {
+                                self.runtime_error_message(
+                                    "Both operands must be numbers or strings",
+                                    chunk,
+                                );
+                                return Err(VirtualMachineError::InvalidVariableType);
+                            }
+                            Err(_) => panic!("Shouldn't raise any other type of error"),
+                        },
+                        _ => {
+                            self.runtime_error_message(
+                                "Both operand must be numbers or strings",
+                                chunk,
+                            );
                             return Err(VirtualMachineError::InvalidVariableType);
                         }
-                        Err(_) => panic!("Shouldn't raise any other type of error"),
                     }
                 }
                 OperationCode::Substract => {
@@ -222,6 +246,27 @@ impl VirtualMachine {
             .get_number()
             .map_err(|_| VirtualMachineError::InvalidVariableType)?;
         Ok(Value::new_number(lhs + rhs))
+    }
+
+    fn add_strings(&mut self, lhs: &Value, rhs: &Value) -> Result<Value, VirtualMachineError> {
+        let lhs: &HeapObject = &lhs
+            .get_heap_object()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?
+            .borrow();
+        let rhs: &HeapObject = &rhs
+            .get_heap_object()
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?
+            .borrow();
+
+        match (lhs, rhs) {
+            (HeapObject::String(lhs_string_object), HeapObject::String(rhs_string_object)) => {
+                let mut content = String::new();
+                content.push_str(lhs_string_object.get_value());
+                content.push_str(rhs_string_object.get_value());
+                let string_object = StringObject::new(&content);
+                Ok(Value::new_heap_object(HeapObject::String(string_object)))
+            }
+        }
     }
 
     fn substract_numbers(
