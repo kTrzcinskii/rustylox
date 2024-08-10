@@ -4,7 +4,7 @@ use crate::{
     chunk::{Chunk, OperationCode},
     lexer::{Lexer, Token, TokenType},
     logger::Logger,
-    value::Value,
+    value::{HeapObject, StringObject, Value},
 };
 
 pub struct Compiler<'a> {
@@ -108,7 +108,7 @@ impl<'a> Compiler<'a> {
             TokenType::Less => return Err(CompilerError::EmptyFunction),
             TokenType::LessEqual => return Err(CompilerError::EmptyFunction),
             TokenType::Identifier => return Err(CompilerError::EmptyFunction),
-            TokenType::String => return Err(CompilerError::EmptyFunction),
+            TokenType::String => self.handle_string(),
             TokenType::Number => self.handle_number(),
             TokenType::And => return Err(CompilerError::EmptyFunction),
             TokenType::Class => return Err(CompilerError::EmptyFunction),
@@ -181,6 +181,15 @@ impl<'a> Compiler<'a> {
         let end_index = start_index + token.length;
         if end_index > self.source.len() {
             panic!("Token shouldn't use index outside of bounds.");
+        }
+        &self.source[start_index..end_index]
+    }
+
+    fn get_string_content_from_token(&self, token: &Token) -> &'a str {
+        let start_index = token.start + 1;
+        let end_index = start_index + token.length - 2;
+        if end_index > self.source.len() || end_index < start_index {
+            panic!("String token should correctly represent string with leading and ending '\"' signs. ")
         }
         &self.source[start_index..end_index]
     }
@@ -308,6 +317,12 @@ impl<'a> Compiler<'a> {
             TokenType::False => self.emit_instruction(OperationCode::False),
             _ => panic!("Unreachable"),
         }
+    }
+
+    fn handle_string(&mut self) {
+        let content = self.get_string_content_from_token(&self.parser.previous.unwrap());
+        let string_object = StringObject::new(content);
+        self.emit_constant(Value::new_heap_object(HeapObject::String(string_object)));
     }
 
     fn parse_precendence(&mut self, precedence: Precedence) {

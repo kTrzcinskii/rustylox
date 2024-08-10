@@ -14,6 +14,14 @@ pub struct StringObject {
     value: String,
 }
 
+impl StringObject {
+    pub fn new(value: &str) -> Self {
+        Self {
+            value: value.into(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum HeapObject {
     String(StringObject),
