@@ -12,17 +12,33 @@ pub enum ValueType {
 #[derive(Clone)]
 pub struct StringObject {
     value: String,
+    hash: u32,
 }
 
 impl StringObject {
     pub fn new(value: &str) -> Self {
         Self {
             value: value.into(),
+            hash: Self::hash(value),
         }
     }
 
     pub fn get_value(&self) -> &str {
         &self.value
+    }
+
+    pub fn get_hash(&self) -> u32 {
+        self.hash
+    }
+
+    // FNV-1a algorithm for calculating hash
+    fn hash(value: &str) -> u32 {
+        let mut hash_resut: u32 = 2166136261;
+        for b in value.as_bytes() {
+            hash_resut ^= *b as u32;
+            hash_resut *= 16777619;
+        }
+        hash_resut
     }
 }
 
