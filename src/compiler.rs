@@ -4,7 +4,8 @@ use crate::{
     chunk::{Chunk, OperationCode},
     lexer::{Lexer, Token, TokenType},
     logger::Logger,
-    value::{HeapObject, StringObject, Value},
+    table::Table,
+    value::Value,
 };
 
 pub struct Compiler<'a> {
@@ -12,6 +13,7 @@ pub struct Compiler<'a> {
     lexer: Lexer<'a>,
     source: &'a str,
     compiling_chunk: Option<Chunk>,
+    intern_strings: Option<Table>,
 }
 
 #[derive(Debug)]
@@ -19,6 +21,12 @@ pub enum CompilerError {
     EmptyChunk,
     ParserInErrorState,
     EmptyFunction,
+    EmptyInternStrings,
+}
+
+pub struct CompilerResult {
+    pub chunk: Chunk,
+    pub intern_strings: Table,
 }
 
 impl<'a> Compiler<'a> {
@@ -28,10 +36,11 @@ impl<'a> Compiler<'a> {
             lexer: Lexer::new(source),
             source,
             compiling_chunk: Some(Chunk::new()),
+            intern_strings: Some(Table::new()),
         }
     }
 
-    pub fn compile(&mut self) -> Result<Chunk, CompilerError> {
+    pub fn compile(&mut self) -> Result<CompilerResult, CompilerError> {
         self.advance();
         self.compile_expression();
         self.consume(TokenType::Eof, "Expect end of expression.");
@@ -44,10 +53,16 @@ impl<'a> Compiler<'a> {
         }
 
         match self.parser.in_error_state {
-            false => Ok(self
-                .compiling_chunk
-                .take()
-                .ok_or(CompilerError::EmptyChunk)?),
+            false => Ok(CompilerResult {
+                chunk: self
+                    .compiling_chunk
+                    .take()
+                    .ok_or(CompilerError::EmptyChunk)?,
+                intern_strings: self
+                    .intern_strings
+                    .take()
+                    .ok_or(CompilerError::EmptyInternStrings)?,
+            }),
             true => Err(CompilerError::ParserInErrorState),
         }
     }
@@ -321,8 +336,13 @@ impl<'a> Compiler<'a> {
 
     fn handle_string(&mut self) {
         let content = self.get_string_content_from_token(&self.parser.previous.unwrap());
-        let string_object = StringObject::new(content);
-        self.emit_constant(Value::new_heap_object(HeapObject::String(string_object)));
+        let new_string = Value::new_string_heap_object(
+            content,
+            self.intern_strings
+                .as_mut()
+                .expect("Intern strings should never be emtpy"),
+        );
+        self.emit_constant(new_string);
     }
 
     fn parse_precendence(&mut self, precedence: Precedence) {

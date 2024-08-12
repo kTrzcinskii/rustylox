@@ -52,10 +52,12 @@ pub struct Table {
 }
 
 impl Table {
+    const INITIAL_TABLE_SIZE: usize = 8;
+
     pub fn new() -> Self {
         Table {
             entries_count: 0,
-            entries: Vec::new(),
+            entries: vec![TableEntry::Empty; Self::INITIAL_TABLE_SIZE],
         }
     }
 
@@ -72,7 +74,7 @@ impl Table {
             TableEntry::Value(_) => InsertResult::Replaced,
             TableEntry::Empty => {
                 self.entries_count += 1;
-                return InsertResult::Added;
+                InsertResult::Added
             }
             TableEntry::Tombstone => InsertResult::Replaced,
         };
@@ -126,13 +128,8 @@ impl Table {
             let entry = &entries[index];
             match entry {
                 TableEntry::Value(entry) => {
-                    // Thanks to this we don't have to just if string (possibly very long) are equal - we just
+                    // Thanks to this we don't have to check if strings (possibly very long) are equal - we just
                     // check if underlying pointers point to the same place in memory
-                    // FIXME: CURRENLTY ITS NOT WORKING
-                    // TODO: in order for this to work, in the compiler everywhere where StringObject::new is called
-                    // it must use String Interning
-                    // We can probalby just change the implementation of "new" itself (with may be changing name)
-                    // and leave the rest of code as it is
                     if Rc::ptr_eq(&entry.key, key) {
                         return index;
                     }
@@ -148,6 +145,26 @@ impl Table {
             }
 
             index = (index + 1) % entries.len();
+        }
+    }
+
+    pub fn find_string(&self, new_string: &str) -> Option<Rc<RefCell<StringObject>>> {
+        if self.entries_count == 0 {
+            return None;
+        }
+        let mut index = StringObject::hash(new_string) as usize % self.entries.len();
+        loop {
+            let entry = &self.entries[index];
+            match entry {
+                TableEntry::Value(entry) => {
+                    if entry.key.borrow().get_value() == new_string {
+                        return Some(entry.key.clone());
+                    }
+                }
+                TableEntry::Tombstone => {}
+                TableEntry::Empty => return None,
+            }
+            index = (index + 1) % self.entries.len();
         }
     }
 

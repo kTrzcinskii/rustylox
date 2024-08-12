@@ -1,6 +1,8 @@
 use core::fmt;
 use std::{cell::RefCell, mem::ManuallyDrop, rc::Rc};
 
+use crate::table::Table;
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum ValueType {
     Bool,
@@ -16,11 +18,19 @@ pub struct StringObject {
 }
 
 impl StringObject {
-    pub fn new(value: &str) -> Self {
+    fn new(value: &str) -> Self {
         Self {
             value: value.into(),
             hash: Self::hash(value),
         }
+    }
+
+    fn transform_to_rc(self) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(self))
+    }
+
+    fn new_rc(value: &str) -> Rc<RefCell<Self>> {
+        Self::new(value).transform_to_rc()
     }
 
     pub fn get_value(&self) -> &str {
@@ -32,11 +42,11 @@ impl StringObject {
     }
 
     // FNV-1a algorithm for calculating hash
-    fn hash(value: &str) -> u32 {
+    pub fn hash(value: &str) -> u32 {
         let mut hash_resut: u32 = 2166136261;
         for b in value.as_bytes() {
             hash_resut ^= *b as u32;
-            hash_resut *= 16777619;
+            hash_resut = hash_resut.wrapping_mul(16777619);
         }
         hash_resut
     }
@@ -44,14 +54,19 @@ impl StringObject {
 
 #[derive(Clone)]
 pub enum HeapObject {
-    String(StringObject),
+    // TODO: maybe it will be better to just create new type - StringObject, that will be the type on its own - thanks to this
+    // we won't have to have this double pointer mess
+
+    // It doesn't look that good, but it's the only way I came up with to be able to have just Rc<RefCell<StringObject>> as keys in
+    // `Table`. Otherwise, in each method we would have to firstly check if HeapObject is StringObject
+    String(Rc<RefCell<StringObject>>),
 }
 
 impl HeapObject {
     pub fn are_objects_equal(lhs: &HeapObject, rhs: &HeapObject) -> bool {
         match (lhs, rhs) {
             (HeapObject::String(lsh_string_object), HeapObject::String(rhs_string_object)) => {
-                lsh_string_object.value == rhs_string_object.value
+                Rc::ptr_eq(lsh_string_object, rhs_string_object)
             }
         }
     }
@@ -60,7 +75,9 @@ impl HeapObject {
 impl fmt::Display for HeapObject {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            HeapObject::String(string_object) => write!(f, "{}", string_object.value),
+            HeapObject::String(string_object) => {
+                write!(f, "{}", string_object.borrow().get_value())
+            }
         }
     }
 }
@@ -146,6 +163,18 @@ impl Value {
             ValueType::HeapObject => unsafe { Ok(&self.actual_value.object) },
             _ => Err(ValueInterpretingError {}),
         }
+    }
+
+    // We do it this way to make working with intern strings easier
+    // (If we kept only "new_heap_object", then we would have to pass "intern_string" in every call)
+    pub fn new_string_heap_object(value: &str, intern_strings: &mut Table) -> Value {
+        if let Some(already_existing) = intern_strings.find_string(value) {
+            return Self::new_heap_object(HeapObject::String(already_existing));
+        }
+        let key = StringObject::new_rc(value);
+        let result = Self::new_heap_object(HeapObject::String(key.clone()));
+        intern_strings.insert(key, Value::new_nil());
+        result
     }
 
     pub fn get_type(&self) -> ValueType {

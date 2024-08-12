@@ -2,7 +2,8 @@ use crate::{
     chunk::{Chunk, OperationCode, OperationCodeConversionError},
     compiler::Compiler,
     logger::Logger,
-    value::{HeapObject, StringObject, Value, ValueType},
+    table::Table,
+    value::{HeapObject, Value, ValueType},
 };
 
 pub enum InterpretResult {
@@ -25,6 +26,8 @@ pub struct VirtualMachine {
     instruction_pointer: usize,
     /// Internal stack for holding literals
     stack: Vec<Value>,
+    /// Collection of intern strings
+    strings: Option<Table>,
 }
 
 struct BinaryOperationArguments {
@@ -39,6 +42,7 @@ impl VirtualMachine {
         VirtualMachine {
             instruction_pointer: 0,
             stack: Vec::with_capacity(Self::INITIAL_STACK_SIZE),
+            strings: None,
         }
     }
 
@@ -53,9 +57,10 @@ impl VirtualMachine {
     pub fn interpret(&mut self, source: &str) -> InterpretResult {
         let mut compiler = Compiler::new(source);
         match compiler.compile() {
-            Ok(chunk) => {
+            Ok(chunk_result) => {
                 self.instruction_pointer = 0;
-                match self.run(&chunk) {
+                self.strings = Some(chunk_result.intern_strings);
+                match self.run(&chunk_result.chunk) {
                     Ok(_) => InterpretResult::Ok,
                     Err(_) => InterpretResult::RuntimeError,
                 }
@@ -221,15 +226,6 @@ impl VirtualMachine {
         self.stack.pop().ok_or(VirtualMachineError::EmptyStack)
     }
 
-    // TODO: decide if this is actually needed (probably can be removed)
-    // fn stack_peek(&self, distance: usize) -> Result<&Value, VirtualMachineError> {
-    //     let index = self.stack.len() - 1 - distance;
-    //     if self.stack.len() < 1 + distance {
-    //         return Err(VirtualMachineError::StackOutOfBounds);
-    //     }
-    //     Ok(&self.stack[index])
-    // }
-
     fn runtime_error_message(&mut self, message: &str, chunk: &Chunk) {
         eprintln!("{}", message);
 
@@ -261,10 +257,14 @@ impl VirtualMachine {
         match (lhs, rhs) {
             (HeapObject::String(lhs_string_object), HeapObject::String(rhs_string_object)) => {
                 let mut content = String::new();
-                content.push_str(lhs_string_object.get_value());
-                content.push_str(rhs_string_object.get_value());
-                let string_object = StringObject::new(&content);
-                Ok(Value::new_heap_object(HeapObject::String(string_object)))
+                content.push_str(lhs_string_object.borrow().get_value());
+                content.push_str(rhs_string_object.borrow().get_value());
+                Ok(Value::new_string_heap_object(
+                    &content,
+                    self.strings
+                        .as_mut()
+                        .expect("Intern string should never be empty in VM after compiling stage"),
+                ))
             }
         }
     }
