@@ -102,6 +102,14 @@ impl Logger {
                         chunk.read_constant(constant_index),
                     ))
                 }
+                OperationCode::GetGlobal(global_index) => {
+                    return Ok(Self::constant_instruction(
+                        "OP_GET_GLOBAL",
+                        offset,
+                        constant_index,
+                        chunk.read_constant(constant_index),
+                    ))
+                }
             }
         }
         Ok(0)

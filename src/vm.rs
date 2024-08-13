@@ -20,6 +20,7 @@ pub enum VirtualMachineError {
     InvalidVariableType,
     DivideByZero,
     InvalidVariableNameType,
+    UndefinedVariable,
 }
 
 pub struct VirtualMachine {
@@ -28,7 +29,7 @@ pub struct VirtualMachine {
     /// Internal stack for holding literals
     stack: Vec<Value>,
     /// Collection of intern strings
-    strings: Option<Table>,
+    strings: Table,
     /// Collection of global variables
     globals: Table,
 }
@@ -45,7 +46,7 @@ impl VirtualMachine {
         VirtualMachine {
             instruction_pointer: 0,
             stack: Vec::with_capacity(Self::INITIAL_STACK_SIZE),
-            strings: None,
+            strings: Table::new(),
             globals: Table::new(),
         }
     }
@@ -60,11 +61,10 @@ impl VirtualMachine {
 
     pub fn interpret(&mut self, source: &str) -> InterpretResult {
         let mut compiler = Compiler::new(source);
-        match compiler.compile() {
-            Ok(chunk_result) => {
+        match compiler.compile(&mut self.strings) {
+            Ok(chunk) => {
                 self.instruction_pointer = 0;
-                self.strings = Some(chunk_result.intern_strings);
-                match self.run(&chunk_result.chunk) {
+                match self.run(&chunk) {
                     Ok(_) => InterpretResult::Ok,
                     Err(_) => InterpretResult::RuntimeError,
                 }
@@ -228,6 +228,25 @@ impl VirtualMachine {
                         Err(_) => return Err(VirtualMachineError::InvalidVariableNameType),
                     }
                 }
+                OperationCode::GetGlobal(global_var_index) => {
+                    let name = chunk.read_constant(global_var_index);
+                    let name_string_object = name
+                        .get_string_object()
+                        .map_err(|_| VirtualMachineError::InvalidVariableNameType)?;
+                    match self.globals.get(name_string_object) {
+                        Ok(value) => self.stack_push(value.clone()),
+                        Err(_) => {
+                            self.runtime_error_message(
+                                &format!(
+                                    "Undefined variable '{}'",
+                                    name_string_object.borrow().get_value()
+                                ),
+                                chunk,
+                            );
+                            return Err(VirtualMachineError::UndefinedVariable);
+                        }
+                    }
+                }
             }
         }
     }
@@ -287,12 +306,7 @@ impl VirtualMachine {
         let mut content = String::new();
         content.push_str(lhs.get_value());
         content.push_str(rhs.get_value());
-        Ok(Value::new_string_object(
-            &content,
-            self.strings
-                .as_mut()
-                .expect("Intern string should never be empty in VM after compiling stage"),
-        ))
+        Ok(Value::new_string_object(&content, &mut self.strings))
     }
 
     fn substract_numbers(

@@ -83,7 +83,7 @@ impl Table {
         result
     }
 
-    pub fn insert_all_from(from: &mut Table, to: &mut Table) {
+    pub fn insert_all_from(from: &Table, to: &mut Table) {
         for entry in &from.entries {
             if let TableEntry::Value(entry) = entry {
                 to.insert(entry.key.clone(), entry.value.clone());

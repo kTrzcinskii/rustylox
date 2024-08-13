@@ -8,12 +8,12 @@ use crate::{
     value::Value,
 };
 
-pub struct Compiler<'a> {
+pub struct Compiler<'a, 'b> {
     parser: Parser,
     lexer: Lexer<'a>,
     source: &'a str,
     compiling_chunk: Option<Chunk>,
-    intern_strings: Option<Table>,
+    intern_strings: Option<&'b mut Table>,
 }
 
 #[derive(Debug)]
@@ -24,23 +24,19 @@ pub enum CompilerError {
     EmptyInternStrings,
 }
 
-pub struct CompilerResult {
-    pub chunk: Chunk,
-    pub intern_strings: Table,
-}
-
-impl<'a> Compiler<'a> {
+impl<'a, 'b> Compiler<'a, 'b> {
     pub fn new(source: &'a str) -> Self {
         Compiler {
             parser: Parser::new(),
             lexer: Lexer::new(source),
             source,
             compiling_chunk: Some(Chunk::new()),
-            intern_strings: Some(Table::new()),
+            intern_strings: None,
         }
     }
 
-    pub fn compile(&mut self) -> Result<CompilerResult, CompilerError> {
+    pub fn compile(&mut self, intern_strings: &'b mut Table) -> Result<Chunk, CompilerError> {
+        self.intern_strings = Some(intern_strings);
         self.advance();
 
         while !self.match_current(&TokenType::Eof) {
@@ -55,16 +51,10 @@ impl<'a> Compiler<'a> {
         }
 
         match self.parser.in_error_state {
-            false => Ok(CompilerResult {
-                chunk: self
-                    .compiling_chunk
-                    .take()
-                    .ok_or(CompilerError::EmptyChunk)?,
-                intern_strings: self
-                    .intern_strings
-                    .take()
-                    .ok_or(CompilerError::EmptyInternStrings)?,
-            }),
+            false => Ok(self
+                .compiling_chunk
+                .take()
+                .ok_or(CompilerError::EmptyChunk)?),
             true => Err(CompilerError::ParserInErrorState),
         }
     }
@@ -172,7 +162,7 @@ impl<'a> Compiler<'a> {
             TokenType::GreaterEqual => return Err(CompilerError::EmptyFunction),
             TokenType::Less => return Err(CompilerError::EmptyFunction),
             TokenType::LessEqual => return Err(CompilerError::EmptyFunction),
-            TokenType::Identifier => return Err(CompilerError::EmptyFunction),
+            TokenType::Identifier => self.handle_variable(),
             TokenType::String => self.handle_string(),
             TokenType::Number => self.handle_number(),
             TokenType::And => return Err(CompilerError::EmptyFunction),
@@ -434,6 +424,15 @@ impl<'a> Compiler<'a> {
         );
 
         self.define_variable(global_index);
+    }
+
+    fn handle_variable(&mut self) {
+        self.handle_named_variable(&self.parser.previous.unwrap());
+    }
+
+    fn handle_named_variable(&mut self, name: &Token) {
+        let var_index = self.make_identifier_constant(name);
+        self.emit_instruction(OperationCode::GetGlobal(var_index));
     }
 
     fn parse_precendence(&mut self, precedence: Precedence) {
