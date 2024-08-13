@@ -121,6 +121,36 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn synchronize(&mut self) {
+        self.parser.in_panic_state = false;
+
+        while self
+            .parser
+            .current
+            .expect("Current shouldn't be empty in synchronize")
+            .token_type
+            != TokenType::Eof
+        {
+            match self
+                .parser
+                .previous
+                .expect("Previous shouldn't be empty in synchronize")
+                .token_type
+            {
+                TokenType::Class => return,
+                TokenType::Fun => return,
+                TokenType::Var => return,
+                TokenType::For => return,
+                TokenType::If => return,
+                TokenType::While => return,
+                TokenType::Print => return,
+                TokenType::Return => return,
+                _ => {}
+            }
+            self.advance();
+        }
+    }
+
     fn call_prefix_function(&mut self, token_type: &TokenType) -> Result<(), CompilerError> {
         match token_type {
             TokenType::LeftParen => self.handle_grouping(),
@@ -282,6 +312,17 @@ impl<'a> Compiler<'a> {
             .add_constant(constant)
     }
 
+    fn make_identifier_constant(&mut self, token: &Token) -> usize {
+        let name = self.get_lexeme_from_token(token);
+        let name_string_object = Value::new_string_object(
+            name,
+            self.intern_strings
+                .as_mut()
+                .expect("during compilation intern strings should be set"),
+        );
+        self.make_constant(name_string_object)
+    }
+
     fn end_compiler(&mut self) {
         self.emit_instruction(OperationCode::Return);
     }
@@ -377,6 +418,24 @@ impl<'a> Compiler<'a> {
         self.emit_instruction(OperationCode::PopStack);
     }
 
+    fn handle_var_declaration(&mut self) {
+        let global_index = self.parse_variable("Expect variable name.");
+
+        if self.match_current(&TokenType::Equal) {
+            self.compile_expression();
+        } else {
+            // If variable isn't initalized with any value we implicitly set it to nil
+            self.emit_instruction(OperationCode::Nil);
+        }
+
+        self.consume(
+            TokenType::Semicolon,
+            "Expect ';' after varialbe declaration.",
+        );
+
+        self.define_variable(global_index);
+    }
+
     fn parse_precendence(&mut self, precedence: Precedence) {
         self.advance();
         let prefix_fn = self.call_prefix_function(&self.parser.previous.unwrap().token_type);
@@ -398,12 +457,29 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn parse_variable(&mut self, message: &str) -> usize {
+        self.consume(TokenType::Identifier, message);
+        self.make_identifier_constant(&self.parser.previous.unwrap())
+    }
+
+    fn define_variable(&mut self, var_index: usize) {
+        self.emit_instruction(OperationCode::DefineGlobal(var_index));
+    }
+
     fn compile_expression(&mut self) {
         self.parse_precendence(Precedence::Assignment);
     }
 
     fn compile_declaration(&mut self) {
-        self.compile_statement();
+        if self.match_current(&TokenType::Var) {
+            self.handle_var_declaration();
+        } else {
+            self.compile_statement();
+        }
+
+        if self.parser.in_panic_state {
+            self.synchronize();
+        }
     }
 
     fn compile_statement(&mut self) {

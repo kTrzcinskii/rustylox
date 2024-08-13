@@ -94,6 +94,14 @@ impl Logger {
                 OperationCode::PopStack => {
                     return Ok(Self::simple_instruction("OP_POP_STACK", offset, code));
                 }
+                OperationCode::DefineGlobal(global_index) => {
+                    return Ok(Self::constant_instruction(
+                        "OP_DEFINE_GLOBAL",
+                        offset,
+                        constant_index,
+                        chunk.read_constant(constant_index),
+                    ))
+                }
             }
         }
         Ok(0)

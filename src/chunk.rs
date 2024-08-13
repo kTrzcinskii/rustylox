@@ -18,6 +18,8 @@ pub enum OperationCode {
     Less,
     Print,
     PopStack,
+    /// Define global variable, arguments: (variable index in `ValueContainer`)
+    DefineGlobal(usize),
 }
 
 impl OperationCode {
@@ -39,6 +41,7 @@ impl OperationCode {
             OperationCode::Less => 1,
             OperationCode::Print => 1,
             OperationCode::PopStack => 1,
+            OperationCode::DefineGlobal(_) => 2,
         }
     }
 }
@@ -62,6 +65,7 @@ impl From<OperationCode> for u8 {
             OperationCode::Less => 13,
             OperationCode::Print => 14,
             OperationCode::PopStack => 15,
+            OperationCode::DefineGlobal(_) => 16,
         }
     }
 }
@@ -87,6 +91,12 @@ impl From<OperationCode> for Vec<u8> {
             OperationCode::Less => vec![u8::from(OperationCode::Less)],
             OperationCode::Print => vec![u8::from(OperationCode::Print)],
             OperationCode::PopStack => vec![u8::from(OperationCode::PopStack)],
+            OperationCode::DefineGlobal(global_var) => {
+                vec![
+                    u8::from(OperationCode::DefineGlobal(global_var)),
+                    global_var as u8,
+                ]
+            }
         }
     }
 }
@@ -131,6 +141,16 @@ impl TryFrom<&[u8]> for OperationCode {
             13 => Ok(OperationCode::Less),
             14 => Ok(OperationCode::Print),
             15 => Ok(OperationCode::PopStack),
+            16 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::DefineGlobal(
+                        usize::MIN,
+                    ))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::DefineGlobal(value[1] as usize))
+            }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
     }

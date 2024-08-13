@@ -19,6 +19,7 @@ pub enum VirtualMachineError {
     StackOutOfBounds,
     InvalidVariableType,
     DivideByZero,
+    InvalidVariableNameType,
 }
 
 pub struct VirtualMachine {
@@ -28,6 +29,8 @@ pub struct VirtualMachine {
     stack: Vec<Value>,
     /// Collection of intern strings
     strings: Option<Table>,
+    /// Collection of global variables
+    globals: Table,
 }
 
 struct BinaryOperationArguments {
@@ -43,6 +46,7 @@ impl VirtualMachine {
             instruction_pointer: 0,
             stack: Vec::with_capacity(Self::INITIAL_STACK_SIZE),
             strings: None,
+            globals: Table::new(),
         }
     }
 
@@ -210,6 +214,20 @@ impl VirtualMachine {
                 OperationCode::PopStack => {
                     self.stack_pop()?;
                 }
+                OperationCode::DefineGlobal(global_var_index) => {
+                    let name = chunk.read_constant(global_var_index);
+                    match name.get_string_object() {
+                        // Popping only after the value is added to globals is by design.
+                        // It's done this way to ensue the VM can still find the value
+                        // even if garbage collection is triggered right in the middle of adding to the `Table`
+                        Ok(var_name) => {
+                            self.globals
+                                .insert(var_name.clone(), self.stack_peek(0)?.clone());
+                            self.stack_pop()?;
+                        }
+                        Err(_) => return Err(VirtualMachineError::InvalidVariableNameType),
+                    }
+                }
             }
         }
     }
@@ -228,6 +246,14 @@ impl VirtualMachine {
 
     fn stack_pop(&mut self) -> Result<Value, VirtualMachineError> {
         self.stack.pop().ok_or(VirtualMachineError::EmptyStack)
+    }
+
+    fn stack_peek(&self, distance: usize) -> Result<&Value, VirtualMachineError> {
+        let index = self.stack.len() - 1 - distance;
+        if self.stack.len() < 1 + distance {
+            return Err(VirtualMachineError::StackOutOfBounds);
+        }
+        Ok(&self.stack[index])
     }
 
     fn runtime_error_message(&mut self, message: &str, chunk: &Chunk) {
