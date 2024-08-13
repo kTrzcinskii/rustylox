@@ -42,8 +42,10 @@ impl<'a> Compiler<'a> {
 
     pub fn compile(&mut self) -> Result<CompilerResult, CompilerError> {
         self.advance();
-        self.compile_expression();
-        self.consume(TokenType::Eof, "Expect end of expression.");
+
+        while !self.match_current(&TokenType::Eof) {
+            self.compile_declaration();
+        }
 
         self.end_compiler();
 
@@ -98,6 +100,24 @@ impl<'a> Compiler<'a> {
                 self.handle_error_at_token(&token, message);
             }
             None => panic!("Current token in parser should never be None in consume."),
+        }
+    }
+
+    fn check_current(&self, token_type: &TokenType) -> bool {
+        self.parser
+            .current
+            .expect("during check_current parser should have current set")
+            .token_type
+            == *token_type
+    }
+
+    fn match_current(&mut self, token_type: &TokenType) -> bool {
+        match self.check_current(token_type) {
+            true => {
+                self.advance();
+                true
+            }
+            false => false,
         }
     }
 
@@ -345,6 +365,12 @@ impl<'a> Compiler<'a> {
         self.emit_constant(new_string);
     }
 
+    fn handle_print_statement(&mut self) {
+        self.compile_expression();
+        self.consume(TokenType::Semicolon, "Expect ';' after value.");
+        self.emit_instruction(OperationCode::Print);
+    }
+
     fn parse_precendence(&mut self, precedence: Precedence) {
         self.advance();
         let prefix_fn = self.call_prefix_function(&self.parser.previous.unwrap().token_type);
@@ -368,6 +394,16 @@ impl<'a> Compiler<'a> {
 
     fn compile_expression(&mut self) {
         self.parse_precendence(Precedence::Assignment);
+    }
+
+    fn compile_declaration(&mut self) {
+        self.compile_statement()
+    }
+
+    fn compile_statement(&mut self) {
+        if self.match_current(&TokenType::Print) {
+            self.handle_print_statement();
+        }
     }
 }
 

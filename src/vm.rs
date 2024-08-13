@@ -80,9 +80,6 @@ impl VirtualMachine {
             self.instruction_pointer += OperationCode::get_instruction_bytes_length(&instruction);
             match instruction {
                 OperationCode::Return => {
-                    if let Some(value) = self.stack.pop() {
-                        println!("{}", value);
-                    }
                     return Ok(InterpretResult::Ok);
                 }
                 OperationCode::Constant(constant_index) => {
@@ -205,6 +202,10 @@ impl VirtualMachine {
                         }
                         Err(_) => panic!("Shouldn't raise any other type of error"),
                     }
+                }
+                OperationCode::Print => {
+                    let value = self.stack_pop()?;
+                    println!("{}", value);
                 }
             }
         }

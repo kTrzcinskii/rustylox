@@ -88,6 +88,9 @@ impl Logger {
                 OperationCode::Less => {
                     return Ok(Self::simple_instruction("OP_LESS", offset, code));
                 }
+                OperationCode::Print => {
+                    return Ok(Self::simple_instruction("OP_PRINT", offset, code));
+                }
             }
         }
         Ok(0)

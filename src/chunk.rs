@@ -16,6 +16,7 @@ pub enum OperationCode {
     Equal,
     Greater,
     Less,
+    Print,
 }
 
 impl OperationCode {
@@ -35,6 +36,7 @@ impl OperationCode {
             OperationCode::Equal => 1,
             OperationCode::Greater => 1,
             OperationCode::Less => 1,
+            OperationCode::Print => 1,
         }
     }
 }
@@ -56,6 +58,7 @@ impl From<OperationCode> for u8 {
             OperationCode::Equal => 11,
             OperationCode::Greater => 12,
             OperationCode::Less => 13,
+            OperationCode::Print => 14,
         }
     }
 }
@@ -79,6 +82,7 @@ impl From<OperationCode> for Vec<u8> {
             OperationCode::Equal => vec![u8::from(OperationCode::Equal)],
             OperationCode::Greater => vec![u8::from(OperationCode::Greater)],
             OperationCode::Less => vec![u8::from(OperationCode::Less)],
+            OperationCode::Print => vec![u8::from(OperationCode::Print)],
         }
     }
 }
@@ -121,6 +125,7 @@ impl TryFrom<&[u8]> for OperationCode {
             11 => Ok(OperationCode::Equal),
             12 => Ok(OperationCode::Greater),
             13 => Ok(OperationCode::Less),
+            14 => Ok(OperationCode::Print),
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
     }
