@@ -8,7 +8,8 @@ pub enum ValueType {
     Bool,
     Nil,
     Number,
-    HeapObject,
+    StringObject,
+    //HeapObject,
 }
 
 #[derive(Clone)]
@@ -50,43 +51,35 @@ impl StringObject {
         }
         hash_resut
     }
-}
 
-#[derive(Clone)]
-pub enum HeapObject {
-    // TODO: maybe it will be better to just create new type - StringObject, that will be the type on its own - thanks to this
-    // we won't have to have this double pointer mess
-
-    // It doesn't look that good, but it's the only way I came up with to be able to have just Rc<RefCell<StringObject>> as keys in
-    // `Table`. Otherwise, in each method we would have to firstly check if HeapObject is StringObject
-    String(Rc<RefCell<StringObject>>),
-}
-
-impl HeapObject {
-    pub fn are_objects_equal(lhs: &HeapObject, rhs: &HeapObject) -> bool {
-        match (lhs, rhs) {
-            (HeapObject::String(lsh_string_object), HeapObject::String(rhs_string_object)) => {
-                Rc::ptr_eq(lsh_string_object, rhs_string_object)
-            }
-        }
+    pub fn are_equal_rc(lhs: &Rc<RefCell<StringObject>>, rhs: &Rc<RefCell<StringObject>>) -> bool {
+        Rc::ptr_eq(lhs, rhs)
     }
 }
 
-impl fmt::Display for HeapObject {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            HeapObject::String(string_object) => {
-                write!(f, "{}", string_object.borrow().get_value())
-            }
-        }
-    }
-}
+// TODO: will be useful in the next steps
+// #[derive(Clone)]
+// pub enum HeapObject {
+// }
+
+// impl HeapObject {
+//     pub fn are_objects_equal(lhs: &HeapObject, rhs: &HeapObject) -> bool {
+//     }
+// }
+
+// impl fmt::Display for HeapObject {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         match self {
+//         }
+//     }
+// }
 
 #[repr(C)]
 union UnderlyingValue {
     boolean: bool,
     number: f64,
-    object: ManuallyDrop<Rc<RefCell<HeapObject>>>,
+    string_object: ManuallyDrop<Rc<RefCell<StringObject>>>,
+    // object: ManuallyDrop<Rc<RefCell<HeapObject>>>,
 }
 
 pub struct Value {
@@ -145,36 +138,55 @@ impl Value {
         self.value_type == ValueType::Nil
     }
 
-    pub fn new_heap_object(value: HeapObject) -> Value {
+    // pub fn new_heap_object(value: HeapObject) -> Value {
+    //     Value {
+    //         value_type: ValueType::HeapObject,
+    //         actual_value: UnderlyingValue {
+    //             object: ManuallyDrop::new(Rc::new(RefCell::new(value))),
+    //         },
+    //     }
+    // }
+
+    // pub fn is_heap_object(&self) -> bool {
+    //     self.value_type == ValueType::HeapObject
+    // }
+
+    // pub fn get_heap_object(&self) -> Result<&Rc<RefCell<HeapObject>>, ValueInterpretingError> {
+    //     match self.value_type {
+    //         ValueType::HeapObject => unsafe { Ok(&self.actual_value.object) },
+    //         _ => Err(ValueInterpretingError {}),
+    //     }
+    // }
+
+    pub fn new_string_object(value: &str, intern_strings: &mut Table) -> Value {
+        if let Some(already_existing) = intern_strings.find_string(value) {
+            return Value {
+                actual_value: UnderlyingValue {
+                    string_object: ManuallyDrop::new(already_existing.clone()),
+                },
+                value_type: ValueType::StringObject,
+            };
+        }
+        let key = StringObject::new_rc(value);
+        let value_key = key.clone();
+        intern_strings.insert(key, Value::new_nil());
         Value {
-            value_type: ValueType::HeapObject,
+            value_type: ValueType::StringObject,
             actual_value: UnderlyingValue {
-                object: ManuallyDrop::new(Rc::new(RefCell::new(value))),
+                string_object: ManuallyDrop::new(value_key),
             },
         }
     }
 
-    pub fn is_heap_object(&self) -> bool {
-        self.value_type == ValueType::HeapObject
+    pub fn is_string_object(&self) -> bool {
+        self.value_type == ValueType::StringObject
     }
 
-    pub fn get_heap_object(&self) -> Result<&Rc<RefCell<HeapObject>>, ValueInterpretingError> {
+    pub fn get_string_object(&self) -> Result<&Rc<RefCell<StringObject>>, ValueInterpretingError> {
         match self.value_type {
-            ValueType::HeapObject => unsafe { Ok(&self.actual_value.object) },
+            ValueType::StringObject => unsafe { Ok(&self.actual_value.string_object) },
             _ => Err(ValueInterpretingError {}),
         }
-    }
-
-    // We do it this way to make working with intern strings easier
-    // (If we kept only "new_heap_object", then we would have to pass "intern_string" in every call)
-    pub fn new_string_heap_object(value: &str, intern_strings: &mut Table) -> Value {
-        if let Some(already_existing) = intern_strings.find_string(value) {
-            return Self::new_heap_object(HeapObject::String(already_existing));
-        }
-        let key = StringObject::new_rc(value);
-        let result = Self::new_heap_object(HeapObject::String(key.clone()));
-        intern_strings.insert(key, Value::new_nil());
-        result
     }
 
     pub fn get_type(&self) -> ValueType {
@@ -186,7 +198,8 @@ impl Value {
             ValueType::Bool => !self.get_bool().expect("Bool type should contain bool"),
             ValueType::Nil => true,
             ValueType::Number => false,
-            ValueType::HeapObject => true,
+            ValueType::StringObject => true,
+            // ValueType::HeapObject => true,
         }
     }
 
@@ -204,15 +217,20 @@ impl Value {
                 lhs.get_number().expect("Number type should contain number")
                     == rhs.get_number().expect("Number type should contain number")
             }
-            ValueType::HeapObject => {
-                let lhs_unwrap = lhs
-                    .get_heap_object()
-                    .expect("HeapObject type should contain heap object");
-                let rhs_unwrap = rhs
-                    .get_heap_object()
-                    .expect("HeapObject type should contain heap object");
-                HeapObject::are_objects_equal(&lhs_unwrap.borrow(), &rhs_unwrap.borrow())
-            }
+            ValueType::StringObject => StringObject::are_equal_rc(
+                lhs.get_string_object()
+                    .expect("StringObject type should contain String Object"),
+                rhs.get_string_object()
+                    .expect("StringObject type should contain String Object"),
+            ),
+            // ValueType::HeapObject => {
+            //     let lhs_unwrap = lhs
+            //         .get_heap_object()
+            //         .expect("HeapObject type should contain heap object");
+            //     let rhs_unwrap = rhs
+            //         .get_heap_object()
+            //         .expect("HeapObject type should contain heap object");
+            //     HeapObject::are_objects_equal(&lhs_unwrap.borrow(), &rhs_unwrap.borrow())
         }
     }
 }
@@ -229,10 +247,17 @@ impl Clone for Value {
                     .get_number()
                     .expect("Number type type should contain number"),
             },
-            ValueType::HeapObject => UnderlyingValue {
-                object: ManuallyDrop::new(
-                    self.get_heap_object()
-                        .expect("HeapObject type should contain heap object")
+            // ValueType::HeapObject => UnderlyingValue {
+            //     object: ManuallyDrop::new(
+            //         self.get_heap_object()
+            //             .expect("HeapObject type should contain heap object")
+            //             .clone(),
+            //     ),
+            // },
+            ValueType::StringObject => UnderlyingValue {
+                string_object: ManuallyDrop::new(
+                    self.get_string_object()
+                        .expect("StringObject type should contain String Object")
                         .clone(),
                 ),
             },
@@ -246,10 +271,13 @@ impl Clone for Value {
 
 impl Drop for Value {
     fn drop(&mut self) {
-        if self.is_heap_object() {
-            unsafe {
-                ManuallyDrop::drop(&mut self.actual_value.object);
-            }
+        // if self.is_heap_object() {
+        //     unsafe {
+        //         ManuallyDrop::drop(&mut self.actual_value.object);
+        //     }
+        // }
+        if self.is_string_object() {
+            unsafe { ManuallyDrop::drop(&mut self.actual_value.string_object) }
         }
     }
 }
@@ -269,13 +297,20 @@ impl fmt::Display for Value {
                 self.get_number()
                     .expect("Number type should contain number")
             ),
-            ValueType::HeapObject => write!(
+            ValueType::StringObject => write!(
                 f,
                 "{}",
-                self.get_heap_object()
-                    .expect("HeapObject type should contain heap object")
+                self.get_string_object()
+                    .expect("StringObject type should contain String Object")
                     .borrow()
-            ),
+                    .get_value()
+            ), // ValueType::HeapObject => write!(
+               //     f,
+               //     "{}",
+               //     self.get_heap_object()
+               //         .expect("HeapObject type should contain heap object")
+               //         .borrow()
+               // ),
         }
     }
 }

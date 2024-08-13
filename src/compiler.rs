@@ -336,7 +336,7 @@ impl<'a> Compiler<'a> {
 
     fn handle_string(&mut self) {
         let content = self.get_string_content_from_token(&self.parser.previous.unwrap());
-        let new_string = Value::new_string_heap_object(
+        let new_string = Value::new_string_object(
             content,
             self.intern_strings
                 .as_mut()

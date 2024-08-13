@@ -3,7 +3,7 @@ use crate::{
     compiler::Compiler,
     logger::Logger,
     table::Table,
-    value::{HeapObject, Value, ValueType},
+    value::{StringObject, Value, ValueType},
 };
 
 pub enum InterpretResult {
@@ -114,7 +114,7 @@ impl VirtualMachine {
                             }
                             Err(_) => panic!("Shouldn't raise any other type of error"),
                         },
-                        ValueType::HeapObject => match self.add_strings(&args.lhs, &args.rhs) {
+                        ValueType::StringObject => match self.add_strings(&args.lhs, &args.rhs) {
                             Ok(value) => self.stack_push(value),
                             Err(VirtualMachineError::InvalidVariableType) => {
                                 self.runtime_error_message(
@@ -245,28 +245,24 @@ impl VirtualMachine {
     }
 
     fn add_strings(&mut self, lhs: &Value, rhs: &Value) -> Result<Value, VirtualMachineError> {
-        let lhs: &HeapObject = &lhs
-            .get_heap_object()
+        let lhs: &StringObject = &lhs
+            .get_string_object()
             .map_err(|_| VirtualMachineError::InvalidVariableType)?
             .borrow();
-        let rhs: &HeapObject = &rhs
-            .get_heap_object()
+        let rhs: &StringObject = &rhs
+            .get_string_object()
             .map_err(|_| VirtualMachineError::InvalidVariableType)?
             .borrow();
 
-        match (lhs, rhs) {
-            (HeapObject::String(lhs_string_object), HeapObject::String(rhs_string_object)) => {
-                let mut content = String::new();
-                content.push_str(lhs_string_object.borrow().get_value());
-                content.push_str(rhs_string_object.borrow().get_value());
-                Ok(Value::new_string_heap_object(
-                    &content,
-                    self.strings
-                        .as_mut()
-                        .expect("Intern string should never be empty in VM after compiling stage"),
-                ))
-            }
-        }
+        let mut content = String::new();
+        content.push_str(lhs.get_value());
+        content.push_str(rhs.get_value());
+        Ok(Value::new_string_object(
+            &content,
+            self.strings
+                .as_mut()
+                .expect("Intern string should never be empty in VM after compiling stage"),
+        ))
     }
 
     fn substract_numbers(

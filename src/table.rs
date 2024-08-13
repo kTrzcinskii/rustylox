@@ -130,7 +130,7 @@ impl Table {
                 TableEntry::Value(entry) => {
                     // Thanks to this we don't have to check if strings (possibly very long) are equal - we just
                     // check if underlying pointers point to the same place in memory
-                    if Rc::ptr_eq(&entry.key, key) {
+                    if StringObject::are_equal_rc(&entry.key, key) {
                         return index;
                     }
                 }
