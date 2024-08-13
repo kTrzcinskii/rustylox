@@ -207,6 +207,9 @@ impl VirtualMachine {
                     let value = self.stack_pop()?;
                     println!("{}", value);
                 }
+                OperationCode::PopStack => {
+                    self.stack_pop()?;
+                }
             }
         }
     }

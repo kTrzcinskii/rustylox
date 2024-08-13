@@ -91,6 +91,9 @@ impl Logger {
                 OperationCode::Print => {
                     return Ok(Self::simple_instruction("OP_PRINT", offset, code));
                 }
+                OperationCode::PopStack => {
+                    return Ok(Self::simple_instruction("OP_POP_STACK", offset, code));
+                }
             }
         }
         Ok(0)

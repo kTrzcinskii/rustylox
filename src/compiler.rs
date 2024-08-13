@@ -371,6 +371,12 @@ impl<'a> Compiler<'a> {
         self.emit_instruction(OperationCode::Print);
     }
 
+    fn handle_expression_statement(&mut self) {
+        self.compile_expression();
+        self.consume(TokenType::Semicolon, "Expect ';' after expression.");
+        self.emit_instruction(OperationCode::PopStack);
+    }
+
     fn parse_precendence(&mut self, precedence: Precedence) {
         self.advance();
         let prefix_fn = self.call_prefix_function(&self.parser.previous.unwrap().token_type);
@@ -397,12 +403,14 @@ impl<'a> Compiler<'a> {
     }
 
     fn compile_declaration(&mut self) {
-        self.compile_statement()
+        self.compile_statement();
     }
 
     fn compile_statement(&mut self) {
         if self.match_current(&TokenType::Print) {
             self.handle_print_statement();
+        } else {
+            self.handle_expression_statement();
         }
     }
 }
