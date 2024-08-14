@@ -98,16 +98,24 @@ impl Logger {
                     return Ok(Self::constant_instruction(
                         "OP_DEFINE_GLOBAL",
                         offset,
-                        constant_index,
-                        chunk.read_constant(constant_index),
+                        global_index,
+                        chunk.read_constant(global_index),
                     ))
                 }
                 OperationCode::GetGlobal(global_index) => {
                     return Ok(Self::constant_instruction(
                         "OP_GET_GLOBAL",
                         offset,
-                        constant_index,
-                        chunk.read_constant(constant_index),
+                        global_index,
+                        chunk.read_constant(global_index),
+                    ))
+                }
+                OperationCode::SetGlobal(global_index) => {
+                    return Ok(Self::constant_instruction(
+                        "OP_SET_GLOBAL",
+                        offset,
+                        global_index,
+                        chunk.read_constant(global_index),
                     ))
                 }
             }

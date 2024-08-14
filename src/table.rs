@@ -43,6 +43,7 @@ pub enum InsertResult {
     Replaced,
 }
 
+#[derive(Debug)]
 pub struct KeyNotFound {}
 
 pub struct Table {

@@ -2,7 +2,7 @@ use crate::{
     chunk::{Chunk, OperationCode, OperationCodeConversionError},
     compiler::Compiler,
     logger::Logger,
-    table::Table,
+    table::{InsertResult, Table},
     value::{StringObject, Value, ValueType},
 };
 
@@ -245,6 +245,31 @@ impl VirtualMachine {
                             );
                             return Err(VirtualMachineError::UndefinedVariable);
                         }
+                    }
+                }
+                OperationCode::SetGlobal(global_var_index) => {
+                    let name = chunk.read_constant(global_var_index);
+                    let name_string_object = name
+                        .get_string_object()
+                        .map_err(|_| VirtualMachineError::InvalidVariableNameType)?;
+                    match self
+                        .globals
+                        .insert(name_string_object.clone(), self.stack_peek(0)?.clone())
+                    {
+                        InsertResult::Added => {
+                            // The variable hasn't been defined yet - it's runtime error, as there is no implicit variable declaration in lox
+                            // We delete this, as we don't want to keep this "zombie" variable to provide better REPL experience
+                            self.globals.remove(name_string_object).expect("It should always be possible to remove element that was just added");
+                            self.runtime_error_message(
+                                &format!(
+                                    "Undefined variable '{}'.",
+                                    name_string_object.borrow().get_value()
+                                ),
+                                chunk,
+                            );
+                            return Err(VirtualMachineError::UndefinedVariable);
+                        }
+                        InsertResult::Replaced => {}
                     }
                 }
             }

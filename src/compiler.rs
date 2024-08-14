@@ -24,6 +24,10 @@ pub enum CompilerError {
     EmptyInternStrings,
 }
 
+struct PrefixFunctionsArguments {
+    can_assign: bool,
+}
+
 impl<'a, 'b> Compiler<'a, 'b> {
     pub fn new(source: &'a str) -> Self {
         Compiler {
@@ -141,7 +145,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }
     }
 
-    fn call_prefix_function(&mut self, token_type: &TokenType) -> Result<(), CompilerError> {
+    fn call_prefix_function(
+        &mut self,
+        token_type: &TokenType,
+        arguments: PrefixFunctionsArguments,
+    ) -> Result<(), CompilerError> {
         match token_type {
             TokenType::LeftParen => self.handle_grouping(),
             TokenType::RightParen => return Err(CompilerError::EmptyFunction),
@@ -162,7 +170,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             TokenType::GreaterEqual => return Err(CompilerError::EmptyFunction),
             TokenType::Less => return Err(CompilerError::EmptyFunction),
             TokenType::LessEqual => return Err(CompilerError::EmptyFunction),
-            TokenType::Identifier => self.handle_variable(),
+            TokenType::Identifier => self.handle_variable(arguments.can_assign),
             TokenType::String => self.handle_string(),
             TokenType::Number => self.handle_number(),
             TokenType::And => return Err(CompilerError::EmptyFunction),
@@ -426,18 +434,27 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.define_variable(global_index);
     }
 
-    fn handle_variable(&mut self) {
-        self.handle_named_variable(&self.parser.previous.unwrap());
+    fn handle_variable(&mut self, can_assign: bool) {
+        self.handle_named_variable(&self.parser.previous.unwrap(), can_assign);
     }
 
-    fn handle_named_variable(&mut self, name: &Token) {
+    fn handle_named_variable(&mut self, name: &Token, can_assign: bool) {
         let var_index = self.make_identifier_constant(name);
-        self.emit_instruction(OperationCode::GetGlobal(var_index));
+        if can_assign && self.match_current(&TokenType::Equal) {
+            // Setter
+            self.compile_expression();
+            self.emit_instruction(OperationCode::SetGlobal(var_index));
+        } else {
+            // Getter
+            self.emit_instruction(OperationCode::GetGlobal(var_index));
+        }
     }
 
     fn parse_precendence(&mut self, precedence: Precedence) {
         self.advance();
-        let prefix_fn = self.call_prefix_function(&self.parser.previous.unwrap().token_type);
+        let can_assign = precedence as u8 <= Precedence::Assignment as u8;
+        let args = PrefixFunctionsArguments { can_assign };
+        let prefix_fn = self.call_prefix_function(&self.parser.previous.unwrap().token_type, args);
         match prefix_fn {
             Ok(_) => {
                 while precedence as u8
@@ -448,6 +465,12 @@ impl<'a, 'b> Compiler<'a, 'b> {
                         Ok(_) => {}
                         Err(_) => panic!("Should never fail - we check precedence first"),
                     }
+                }
+                if can_assign && self.match_current(&TokenType::Equal) {
+                    self.handle_error_at_token(
+                        &self.parser.previous.unwrap(),
+                        "Invalid assignment target.",
+                    );
                 }
             }
             Err(_) => {
