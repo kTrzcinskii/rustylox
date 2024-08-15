@@ -8,12 +8,20 @@ use crate::{
     value::Value,
 };
 
+struct Local {
+    name: Token,
+    /// 0 - global scope, 1 - first top-level scope, etc
+    depth: i32,
+}
+
 pub struct Compiler<'a, 'b> {
     parser: Parser,
     lexer: Lexer<'a>,
     source: &'a str,
     compiling_chunk: Option<Chunk>,
     intern_strings: Option<&'b mut Table>,
+    locals: Vec<Local>,
+    current_scope_depth: i32,
 }
 
 #[derive(Debug)]
@@ -36,6 +44,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
             source,
             compiling_chunk: Some(Chunk::new()),
             intern_strings: None,
+            locals: Vec::new(),
+            current_scope_depth: 0,
         }
     }
 
@@ -450,6 +460,14 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }
     }
 
+    fn handle_block_statement(&mut self) {
+        while !self.check_current(&TokenType::RightBrace) && !self.check_current(&TokenType::Eof) {
+            self.handle_var_declaration();
+        }
+
+        self.consume(TokenType::RightBrace, "Expect '}' after block.");
+    }
+
     fn parse_precendence(&mut self, precedence: Precedence) {
         self.advance();
         let can_assign = precedence as u8 <= Precedence::Assignment as u8;
@@ -481,11 +499,83 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn parse_variable(&mut self, message: &str) -> usize {
         self.consume(TokenType::Identifier, message);
+
+        self.declare_variable();
+        // If we are not in global scope we don't need to add the variable to the constant table
+        if self.current_scope_depth > 0 {
+            return 0;
+        }
+
         self.make_identifier_constant(&self.parser.previous.unwrap())
     }
 
     fn define_variable(&mut self, var_index: usize) {
+        if self.current_scope_depth > 0 {
+            return;
+        }
         self.emit_instruction(OperationCode::DefineGlobal(var_index));
+    }
+
+    fn declare_variable(&mut self) {
+        // We don't declare globals
+        if self.current_scope_depth == 0 {
+            return;
+        }
+        let name = self.parser.previous.unwrap();
+
+        // Check if variable is already defined
+        let mut is_already_defined = false;
+        // We iterate from the back, becasue we only need to check current scope
+        for local in self.locals.iter().rev() {
+            // If we are in the outter scope we don't have to check the rest
+            if local.depth != -1 && local.depth < self.current_scope_depth {
+                break;
+            }
+            if local.name == name {
+                is_already_defined = true;
+                break;
+            }
+        }
+        if is_already_defined {
+            self.handle_error_at_token(
+                &self.parser.previous.unwrap(),
+                "Variable with same name already exists in the scope.",
+            );
+        }
+
+        self.add_local_variable(name);
+    }
+
+    fn add_local_variable(&mut self, name: Token) {
+        // We use one-byte index in our vm, so we cannot have more than u8::MAX + 1
+        if self.locals.len() == u8::MAX as usize + 1 {
+            self.handle_error_at_token(
+                &self.parser.previous.unwrap(),
+                "Too many local variables in scope.",
+            );
+        }
+
+        self.locals.push(Local {
+            name,
+            depth: self.current_scope_depth,
+        });
+    }
+
+    fn start_scope(&mut self) {
+        self.current_scope_depth += 1;
+    }
+
+    fn end_scope(&mut self) {
+        self.current_scope_depth -= 1;
+
+        // Remove variable which were in the scope that was just ended from the stack
+        while let Some(local) = self.locals.last() {
+            if local.depth <= self.current_scope_depth {
+                break;
+            }
+            self.locals.pop();
+            self.emit_instruction(OperationCode::PopStack);
+        }
     }
 
     fn compile_expression(&mut self) {
@@ -507,6 +597,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
     fn compile_statement(&mut self) {
         if self.match_current(&TokenType::Print) {
             self.handle_print_statement();
+        } else if self.match_current(&TokenType::LeftBrace) {
+            self.start_scope();
+            self.handle_block_statement();
+            self.end_scope();
         } else {
             self.handle_expression_statement();
         }
