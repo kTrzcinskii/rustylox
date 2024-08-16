@@ -47,7 +47,7 @@ pub enum TokenType {
     Eof,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy)]
 pub struct Token {
     pub token_type: TokenType,
     pub start: usize,

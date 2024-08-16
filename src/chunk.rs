@@ -24,6 +24,10 @@ pub enum OperationCode {
     GetGlobal(usize),
     /// Set global variable, arguments: (variable index in `ValueContainer`)
     SetGlobal(usize),
+    /// Get local variable, arguments: (variable index in `ValueContainer`)
+    GetLocal(usize),
+    /// Set local variable, arguments: (variable index in `ValueContainer`)
+    SetLocal(usize),
 }
 
 impl OperationCode {
@@ -48,6 +52,8 @@ impl OperationCode {
             OperationCode::DefineGlobal(_) => 2,
             OperationCode::GetGlobal(_) => 2,
             OperationCode::SetGlobal(_) => 2,
+            OperationCode::GetLocal(_) => 2,
+            OperationCode::SetLocal(_) => 2,
         }
     }
 }
@@ -74,6 +80,8 @@ impl From<OperationCode> for u8 {
             OperationCode::DefineGlobal(_) => 16,
             OperationCode::GetGlobal(_) => 17,
             OperationCode::SetGlobal(_) => 18,
+            OperationCode::GetLocal(_) => 19,
+            OperationCode::SetLocal(_) => 20,
         }
     }
 }
@@ -115,6 +123,18 @@ impl From<OperationCode> for Vec<u8> {
                 vec![
                     u8::from(OperationCode::SetGlobal(global_var)),
                     global_var as u8,
+                ]
+            }
+            OperationCode::GetLocal(local_var) => {
+                vec![
+                    u8::from(OperationCode::GetLocal(local_var)),
+                    local_var as u8,
+                ]
+            }
+            OperationCode::SetLocal(local_var) => {
+                vec![
+                    u8::from(OperationCode::SetLocal(local_var)),
+                    local_var as u8,
                 ]
             }
         }
@@ -190,6 +210,26 @@ impl TryFrom<&[u8]> for OperationCode {
                     return Err(OperationCodeConversionError::InvalidFormat);
                 }
                 Ok(OperationCode::SetGlobal(value[1] as usize))
+            }
+            19 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::GetLocal(
+                        usize::MIN,
+                    ))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::GetLocal(value[1] as usize))
+            }
+            20 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::SetLocal(
+                        usize::MIN,
+                    ))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::SetLocal(value[1] as usize))
             }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }

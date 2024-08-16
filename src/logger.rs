@@ -118,6 +118,12 @@ impl Logger {
                         chunk.read_constant(global_index),
                     ))
                 }
+                OperationCode::GetLocal(local_index) => {
+                    return Ok(Self::byte_instruction("OP_GET_LOCAL", offset, local_index))
+                }
+                OperationCode::SetLocal(local_index) => {
+                    return Ok(Self::byte_instruction("OP_SET_LOCAL", offset, local_index))
+                }
             }
         }
         Ok(0)
@@ -151,5 +157,11 @@ impl Logger {
         println!("{}", &constant_value);
         offset
             + OperationCode::get_instruction_bytes_length(&OperationCode::Constant(constant_index))
+    }
+
+    #[cfg(feature = "log_trace_execution")]
+    fn byte_instruction(name: &str, offset: usize, index: usize) -> usize {
+        println!("{:<16} {:>4}", name, index);
+        offset + OperationCode::get_instruction_bytes_length(&OperationCode::GetLocal(index))
     }
 }

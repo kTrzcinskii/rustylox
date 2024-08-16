@@ -11,6 +11,7 @@ use crate::{
 struct Local {
     name: Token,
     /// 0 - global scope, 1 - first top-level scope, etc
+    /// -1 means special state - uninitialized (it helps handle weird edge case)
     depth: i32,
 }
 
@@ -31,6 +32,13 @@ pub enum CompilerError {
     EmptyFunction,
     EmptyInternStrings,
 }
+
+enum LocalVariableError {
+    NotFound,
+    UsedInOwnInitializer,
+}
+
+const UNINITIALIZED_DEPTH: i32 = -1;
 
 struct PrefixFunctionsArguments {
     can_assign: bool,
@@ -427,7 +435,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn handle_var_declaration(&mut self) {
-        let global_index = self.parse_variable("Expect variable name.");
+        let index = self.parse_variable("Expect variable name.");
 
         if self.match_current(&TokenType::Equal) {
             self.compile_expression();
@@ -441,7 +449,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             "Expect ';' after varialbe declaration.",
         );
 
-        self.define_variable(global_index);
+        self.define_variable(index);
     }
 
     fn handle_variable(&mut self, can_assign: bool) {
@@ -449,20 +457,40 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn handle_named_variable(&mut self, name: &Token, can_assign: bool) {
-        let var_index = self.make_identifier_constant(name);
+        let (get_operation, set_operation) = match self.resolve_local_variable(name) {
+            Ok(index) => (
+                OperationCode::GetLocal(index),
+                OperationCode::SetLocal(index),
+            ),
+            Err(LocalVariableError::NotFound) => {
+                let global_index = self.make_identifier_constant(name);
+                (
+                    OperationCode::GetGlobal(global_index),
+                    OperationCode::SetLocal(global_index),
+                )
+            }
+            Err(LocalVariableError::UsedInOwnInitializer) => {
+                self.handle_error_at_token(
+                    &self.parser.previous.unwrap(),
+                    "Can't read value of local variable in its own initializer.",
+                );
+                return;
+            }
+        };
+
         if can_assign && self.match_current(&TokenType::Equal) {
             // Setter
             self.compile_expression();
-            self.emit_instruction(OperationCode::SetGlobal(var_index));
+            self.emit_instruction(set_operation);
         } else {
             // Getter
-            self.emit_instruction(OperationCode::GetGlobal(var_index));
+            self.emit_instruction(get_operation);
         }
     }
 
     fn handle_block_statement(&mut self) {
         while !self.check_current(&TokenType::RightBrace) && !self.check_current(&TokenType::Eof) {
-            self.handle_var_declaration();
+            self.compile_declaration();
         }
 
         self.consume(TokenType::RightBrace, "Expect '}' after block.");
@@ -509,8 +537,16 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.make_identifier_constant(&self.parser.previous.unwrap())
     }
 
+    fn are_identifiers_equal(&self, lhs: &Token, rhs: &Token) -> bool {
+        if lhs.token_type != TokenType::Identifier || rhs.token_type != TokenType::Identifier {
+            return false;
+        }
+        self.get_lexeme_from_token(lhs) == self.get_lexeme_from_token(rhs)
+    }
+
     fn define_variable(&mut self, var_index: usize) {
         if self.current_scope_depth > 0 {
+            self.mark_last_initialized();
             return;
         }
         self.emit_instruction(OperationCode::DefineGlobal(var_index));
@@ -531,7 +567,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             if local.depth != -1 && local.depth < self.current_scope_depth {
                 break;
             }
-            if local.name == name {
+            if self.are_identifiers_equal(&local.name, &name) {
                 is_already_defined = true;
                 break;
             }
@@ -557,8 +593,28 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.locals.push(Local {
             name,
-            depth: self.current_scope_depth,
+            depth: UNINITIALIZED_DEPTH,
         });
+    }
+
+    fn resolve_local_variable(&self, name: &Token) -> Result<usize, LocalVariableError> {
+        for (index, local) in self.locals.iter().enumerate().rev() {
+            if self.are_identifiers_equal(&local.name, name) {
+                if local.depth == UNINITIALIZED_DEPTH {
+                    return Err(LocalVariableError::UsedInOwnInitializer);
+                }
+                return Ok(index);
+            }
+        }
+
+        Err(LocalVariableError::NotFound)
+    }
+
+    fn mark_last_initialized(&mut self) {
+        self.locals
+            .last_mut()
+            .expect("Last local shouldn't be empty when marking as initialized.")
+            .depth = self.current_scope_depth;
     }
 
     fn start_scope(&mut self) {
