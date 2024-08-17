@@ -275,10 +275,10 @@ impl VirtualMachine {
                 OperationCode::GetLocal(local_var_index) => {
                     // We must push it even though it's already on the stack as other instructions
                     // read data only from the top of the stack
-                    self.stack_push(self.stack[local_var_index].clone());
+                    self.stack_push(self.stack[local_var_index as usize].clone());
                 }
                 OperationCode::SetLocal(local_var_index) => {
-                    self.stack[local_var_index] = self.stack_peek(0).expect("Index of local var in the stack should be correct as the same index is used in compiler locals").clone();
+                    self.stack[local_var_index as usize] = self.stack_peek(0).expect("Index of local var in the stack should be correct as the same index is used in compiler locals").clone();
                 }
             }
         }

@@ -317,7 +317,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             );
             return;
         }
-        self.emit_instruction(OperationCode::Constant(index));
+        self.emit_instruction(OperationCode::Constant(index as u8));
     }
 
     fn make_constant(&mut self, constant: Value) -> usize {
@@ -328,7 +328,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             .add_constant(constant)
     }
 
-    fn make_identifier_constant(&mut self, token: &Token) -> usize {
+    fn make_identifier_constant(&mut self, token: &Token) -> u8 {
         let name = self.get_lexeme_from_token(token);
         let name_string_object = Value::new_string_object(
             name,
@@ -336,7 +336,16 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 .as_mut()
                 .expect("during compilation intern strings should be set"),
         );
-        self.make_constant(name_string_object)
+        let index = self.make_constant(name_string_object);
+        if index as u8 > u8::MAX {
+            // If we are handling constant then we are sure the previous must exists
+            self.handle_error_at_token(
+                &self.parser.previous.unwrap(),
+                "Too many constants in one chunk",
+            );
+            return 0;
+        }
+        index as u8
     }
 
     fn end_compiler(&mut self) {
@@ -525,7 +534,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }
     }
 
-    fn parse_variable(&mut self, message: &str) -> usize {
+    fn parse_variable(&mut self, message: &str) -> u8 {
         self.consume(TokenType::Identifier, message);
 
         self.declare_variable();
@@ -544,7 +553,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.get_lexeme_from_token(lhs) == self.get_lexeme_from_token(rhs)
     }
 
-    fn define_variable(&mut self, var_index: usize) {
+    fn define_variable(&mut self, var_index: u8) {
         if self.current_scope_depth > 0 {
             self.mark_last_initialized();
             return;
@@ -597,13 +606,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
         });
     }
 
-    fn resolve_local_variable(&self, name: &Token) -> Result<usize, LocalVariableError> {
+    fn resolve_local_variable(&self, name: &Token) -> Result<u8, LocalVariableError> {
         for (index, local) in self.locals.iter().enumerate().rev() {
             if self.are_identifiers_equal(&local.name, name) {
                 if local.depth == UNINITIALIZED_DEPTH {
                     return Err(LocalVariableError::UsedInOwnInitializer);
                 }
-                return Ok(index);
+                return Ok(index as u8);
             }
         }
 

@@ -3,7 +3,7 @@ use crate::value::{Value, ValueContainer};
 pub enum OperationCode {
     Return,
     /// Load constant operation, arguments: (constant index in `ValueContainer`)
-    Constant(usize),
+    Constant(u8),
     Nil,
     True,
     False,
@@ -19,15 +19,15 @@ pub enum OperationCode {
     Print,
     PopStack,
     /// Define global variable, arguments: (variable index in `ValueContainer`)
-    DefineGlobal(usize),
+    DefineGlobal(u8),
     /// Get global variable, arguments: (variable index in `ValueContainer`)
-    GetGlobal(usize),
+    GetGlobal(u8),
     /// Set global variable, arguments: (variable index in `ValueContainer`)
-    SetGlobal(usize),
+    SetGlobal(u8),
     /// Get local variable, arguments: (variable index in `ValueContainer`)
-    GetLocal(usize),
+    GetLocal(u8),
     /// Set local variable, arguments: (variable index in `ValueContainer`)
-    SetLocal(usize),
+    SetLocal(u8),
 }
 
 impl OperationCode {
@@ -91,7 +91,7 @@ impl From<OperationCode> for Vec<u8> {
         match value {
             OperationCode::Return => vec![u8::from(OperationCode::Return)],
             OperationCode::Constant(constant) => {
-                vec![u8::from(OperationCode::Constant(constant)), constant as u8]
+                vec![u8::from(OperationCode::Constant(constant)), constant]
             }
             OperationCode::Negate => vec![u8::from(OperationCode::Negate)],
             OperationCode::Add => vec![u8::from(OperationCode::Add)],
@@ -110,32 +110,20 @@ impl From<OperationCode> for Vec<u8> {
             OperationCode::DefineGlobal(global_var) => {
                 vec![
                     u8::from(OperationCode::DefineGlobal(global_var)),
-                    global_var as u8,
+                    global_var,
                 ]
             }
             OperationCode::GetGlobal(global_var) => {
-                vec![
-                    u8::from(OperationCode::GetGlobal(global_var)),
-                    global_var as u8,
-                ]
+                vec![u8::from(OperationCode::GetGlobal(global_var)), global_var]
             }
             OperationCode::SetGlobal(global_var) => {
-                vec![
-                    u8::from(OperationCode::SetGlobal(global_var)),
-                    global_var as u8,
-                ]
+                vec![u8::from(OperationCode::SetGlobal(global_var)), global_var]
             }
             OperationCode::GetLocal(local_var) => {
-                vec![
-                    u8::from(OperationCode::GetLocal(local_var)),
-                    local_var as u8,
-                ]
+                vec![u8::from(OperationCode::GetLocal(local_var)), local_var]
             }
             OperationCode::SetLocal(local_var) => {
-                vec![
-                    u8::from(OperationCode::SetLocal(local_var)),
-                    local_var as u8,
-                ]
+                vec![u8::from(OperationCode::SetLocal(local_var)), local_var]
             }
         }
     }
@@ -159,13 +147,11 @@ impl TryFrom<&[u8]> for OperationCode {
             0 => Ok(OperationCode::Return),
             1 => {
                 if value.len()
-                    < OperationCode::get_instruction_bytes_length(&OperationCode::Constant(
-                        usize::MIN,
-                    ))
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::Constant(u8::MIN))
                 {
                     return Err(OperationCodeConversionError::InvalidFormat);
                 }
-                Ok(OperationCode::Constant(value[1] as usize))
+                Ok(OperationCode::Constant(value[1]))
             }
             2 => Ok(OperationCode::Negate),
             3 => Ok(OperationCode::Add),
@@ -184,52 +170,48 @@ impl TryFrom<&[u8]> for OperationCode {
             16 => {
                 if value.len()
                     < OperationCode::get_instruction_bytes_length(&OperationCode::DefineGlobal(
-                        usize::MIN,
+                        u8::MIN,
                     ))
                 {
                     return Err(OperationCodeConversionError::InvalidFormat);
                 }
-                Ok(OperationCode::DefineGlobal(value[1] as usize))
+                Ok(OperationCode::DefineGlobal(value[1]))
             }
             17 => {
                 if value.len()
                     < OperationCode::get_instruction_bytes_length(&OperationCode::GetGlobal(
-                        usize::MIN,
+                        u8::MIN,
                     ))
                 {
                     return Err(OperationCodeConversionError::InvalidFormat);
                 }
-                Ok(OperationCode::GetGlobal(value[1] as usize))
+                Ok(OperationCode::GetGlobal(value[1]))
             }
             18 => {
                 if value.len()
                     < OperationCode::get_instruction_bytes_length(&OperationCode::SetGlobal(
-                        usize::MIN,
+                        u8::MIN,
                     ))
                 {
                     return Err(OperationCodeConversionError::InvalidFormat);
                 }
-                Ok(OperationCode::SetGlobal(value[1] as usize))
+                Ok(OperationCode::SetGlobal(value[1]))
             }
             19 => {
                 if value.len()
-                    < OperationCode::get_instruction_bytes_length(&OperationCode::GetLocal(
-                        usize::MIN,
-                    ))
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::GetLocal(u8::MIN))
                 {
                     return Err(OperationCodeConversionError::InvalidFormat);
                 }
-                Ok(OperationCode::GetLocal(value[1] as usize))
+                Ok(OperationCode::GetLocal(value[1]))
             }
             20 => {
                 if value.len()
-                    < OperationCode::get_instruction_bytes_length(&OperationCode::SetLocal(
-                        usize::MIN,
-                    ))
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::SetLocal(u8::MIN))
                 {
                     return Err(OperationCodeConversionError::InvalidFormat);
                 }
-                Ok(OperationCode::SetLocal(value[1] as usize))
+                Ok(OperationCode::SetLocal(value[1]))
             }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
@@ -285,8 +267,8 @@ impl Chunk {
         OperationCode::try_from(&self.instructions[offset..finish])
     }
 
-    pub fn read_constant(&self, offset: usize) -> Value {
-        self.constants.get_value(offset)
+    pub fn read_constant(&self, offset: u8) -> Value {
+        self.constants.get_value(offset as usize)
     }
 
     pub fn read_line(&self, offset: usize) -> usize {
