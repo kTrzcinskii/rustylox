@@ -135,6 +135,14 @@ impl Logger {
                 OperationCode::Jump(bytes_to_skip) => {
                     return Ok(Self::jump_instruction("OP_JUMP", 1, offset, bytes_to_skip))
                 }
+                OperationCode::JumpIfTrue(bytes_to_skip) => {
+                    return Ok(Self::jump_instruction(
+                        "OP_JUMP_IF_TRUE",
+                        1,
+                        offset,
+                        bytes_to_skip,
+                    ))
+                }
             }
         }
         Ok(0)

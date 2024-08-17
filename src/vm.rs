@@ -283,7 +283,7 @@ impl VirtualMachine {
                 OperationCode::JumpIfFalse(bytes_to_skip) => {
                     if self
                         .stack_peek(0)
-                        .expect("Stack shouldn't be empty in jump operation")
+                        .expect("Stack shouldn't be empty during conditional jump operation")
                         .is_falsey()
                     {
                         self.instruction_pointer += bytes_to_skip as usize;
@@ -291,6 +291,15 @@ impl VirtualMachine {
                 }
                 OperationCode::Jump(bytes_to_skip) => {
                     self.instruction_pointer += bytes_to_skip as usize;
+                }
+                OperationCode::JumpIfTrue(bytes_to_skip) => {
+                    if !self
+                        .stack_peek(0)
+                        .expect("Stack shouldn't be empty during conditional jump operation")
+                        .is_falsey()
+                    {
+                        self.instruction_pointer += bytes_to_skip as usize;
+                    }
                 }
             }
         }
