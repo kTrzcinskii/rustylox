@@ -236,7 +236,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             TokenType::Identifier => return Err(CompilerError::EmptyFunction),
             TokenType::String => return Err(CompilerError::EmptyFunction),
             TokenType::Number => return Err(CompilerError::EmptyFunction),
-            TokenType::And => return Err(CompilerError::EmptyFunction),
+            TokenType::And => self.handle_and(),
             TokenType::Class => return Err(CompilerError::EmptyFunction),
             TokenType::Else => return Err(CompilerError::EmptyFunction),
             TokenType::False => return Err(CompilerError::EmptyFunction),
@@ -589,6 +589,20 @@ impl<'a, 'b> Compiler<'a, 'b> {
         );
     }
 
+    fn handle_and(&mut self) {
+        let skip_right_operand_instruction_index =
+            self.emit_jump_instruction(OperationCode::JumpIfFalse(u16::MAX));
+
+        // If left operand is truthy then we pop it from the stack and leave right operand on the stack
+        self.emit_instruction(OperationCode::PopStack);
+        self.parse_precendence(Precedence::And);
+
+        self.patch_jump_instruction(
+            OperationCode::JumpIfFalse(u16::MAX),
+            skip_right_operand_instruction_index,
+        );
+    }
+
     fn parse_precendence(&mut self, precedence: Precedence) {
         self.advance();
         let can_assign = precedence as u8 <= Precedence::Assignment as u8;
@@ -860,7 +874,7 @@ impl From<&TokenType> for Precedence {
             TokenType::Identifier => Precedence::None,
             TokenType::String => Precedence::None,
             TokenType::Number => Precedence::None,
-            TokenType::And => Precedence::None,
+            TokenType::And => Precedence::And,
             TokenType::Class => Precedence::None,
             TokenType::Else => Precedence::None,
             TokenType::False => Precedence::None,
