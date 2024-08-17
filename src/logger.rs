@@ -124,6 +124,7 @@ impl Logger {
                 OperationCode::SetLocal(local_index) => {
                     return Ok(Self::byte_instruction("OP_SET_LOCAL", offset, local_index))
                 }
+                OperationCode::JumpIfFalse(_) => todo!(),
             }
         }
         Ok(0)

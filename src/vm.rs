@@ -280,6 +280,15 @@ impl VirtualMachine {
                 OperationCode::SetLocal(local_var_index) => {
                     self.stack[local_var_index as usize] = self.stack_peek(0).expect("Index of local var in the stack should be correct as the same index is used in compiler locals").clone();
                 }
+                OperationCode::JumpIfFalse(bytes_to_skip) => {
+                    if self
+                        .stack_peek(0)
+                        .expect("Stack shouldn't be empty in jump operation")
+                        .is_falsey()
+                    {
+                        self.instruction_pointer += bytes_to_skip as usize;
+                    }
+                }
             }
         }
     }

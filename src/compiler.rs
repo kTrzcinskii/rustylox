@@ -1,7 +1,7 @@
 use core::panic;
 
 use crate::{
-    chunk::{Chunk, OperationCode},
+    chunk::{self, Chunk, OperationCode},
     lexer::{Lexer, Token, TokenType},
     logger::Logger,
     table::Table,
@@ -302,6 +302,48 @@ impl<'a, 'b> Compiler<'a, 'b> {
             .add_instruction(instruction, line);
     }
 
+    fn emit_jump_instruction(&mut self, instruction: OperationCode) -> usize {
+        self.emit_instruction(instruction);
+        self.compiling_chunk
+            .as_ref()
+            .expect("Chunk shouldn't be empty during compilation.")
+            .get_instructions_length()
+            // + 1, so we end up on the byte that starts the instruction
+            - (chunk::JUMP_INSTRUCTION_ARGUMENT_LENGTH + 1)
+    }
+
+    fn patch_jump_instruction(&mut self, instruction: OperationCode, instruction_index: usize) {
+        let bytes_to_skip = self
+            .compiling_chunk
+            .as_ref()
+            .expect("Compiling chunk shouldn't be empty while compiling.")
+            .get_instructions_length()
+            - (instruction_index + chunk::JUMP_INSTRUCTION_ARGUMENT_LENGTH + 1);
+
+        if bytes_to_skip > u16::MAX as usize {
+            self.handle_error_at_token(
+                &self.parser.previous.unwrap(),
+                "Too much code to jump over.",
+            );
+            return;
+        }
+
+        match self
+            .compiling_chunk
+            .as_mut()
+            .expect("Compiling chunk shouldn't be empty while compiling.")
+            .patch_jump_instruction(instruction, instruction_index, bytes_to_skip as u16)
+        {
+            Ok(_) => {}
+            Err(_) => {
+                self.handle_error_at_token(
+                    &self.parser.previous.unwrap(),
+                    "Error while parsing jump instruction.",
+                );
+            }
+        }
+    }
+
     fn emit_double_instruction(&mut self, first: OperationCode, second: OperationCode) {
         self.emit_instruction(first);
         self.emit_instruction(second);
@@ -505,6 +547,19 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.consume(TokenType::RightBrace, "Expect '}' after block.");
     }
 
+    fn handle_if_statement(&mut self) {
+        self.consume(TokenType::LeftParen, "Expect '(' after 'if'.");
+        self.compile_expression();
+        self.consume(TokenType::RightParen, "Expect ')' after condition.");
+
+        let jump_instruction_index =
+            self.emit_jump_instruction(OperationCode::JumpIfFalse(u16::MAX));
+
+        self.compile_statement();
+
+        self.patch_jump_instruction(OperationCode::JumpIfFalse(u16::MAX), jump_instruction_index);
+    }
+
     fn parse_precendence(&mut self, precedence: Precedence) {
         self.advance();
         let can_assign = precedence as u8 <= Precedence::Assignment as u8;
@@ -662,6 +717,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
     fn compile_statement(&mut self) {
         if self.match_current(&TokenType::Print) {
             self.handle_print_statement();
+        } else if self.match_current(&TokenType::If) {
+            self.handle_if_statement();
         } else if self.match_current(&TokenType::LeftBrace) {
             self.start_scope();
             self.handle_block_statement();

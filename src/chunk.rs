@@ -1,5 +1,9 @@
 use crate::value::{Value, ValueContainer};
 
+const LONGEST_INSTRUCTION_LENGTH: usize = 3;
+
+pub const JUMP_INSTRUCTION_ARGUMENT_LENGTH: usize = 2;
+
 pub enum OperationCode {
     Return,
     /// Load constant operation, arguments: (constant index in `ValueContainer`)
@@ -28,6 +32,8 @@ pub enum OperationCode {
     GetLocal(u8),
     /// Set local variable, arguments: (variable index in `ValueContainer`)
     SetLocal(u8),
+    /// Jump if stack top is false, arguments: (number of bytes to skip)
+    JumpIfFalse(u16),
 }
 
 impl OperationCode {
@@ -54,6 +60,7 @@ impl OperationCode {
             OperationCode::SetGlobal(_) => 2,
             OperationCode::GetLocal(_) => 2,
             OperationCode::SetLocal(_) => 2,
+            OperationCode::JumpIfFalse(_) => 3,
         }
     }
 }
@@ -82,6 +89,7 @@ impl From<OperationCode> for u8 {
             OperationCode::SetGlobal(_) => 18,
             OperationCode::GetLocal(_) => 19,
             OperationCode::SetLocal(_) => 20,
+            OperationCode::JumpIfFalse(_) => 21,
         }
     }
 }
@@ -124,6 +132,14 @@ impl From<OperationCode> for Vec<u8> {
             }
             OperationCode::SetLocal(local_var) => {
                 vec![u8::from(OperationCode::SetLocal(local_var)), local_var]
+            }
+            OperationCode::JumpIfFalse(bytes_to_skip) => {
+                let number_to_byes = bytes_to_skip.to_ne_bytes();
+                vec![
+                    u8::from(OperationCode::JumpIfFalse(bytes_to_skip)),
+                    number_to_byes[0],
+                    number_to_byes[1],
+                ]
             }
         }
     }
@@ -213,6 +229,17 @@ impl TryFrom<&[u8]> for OperationCode {
                 }
                 Ok(OperationCode::SetLocal(value[1]))
             }
+            21 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::JumpIfFalse(
+                        u16::MIN,
+                    ))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                let bytes_to_skip = u16::from_ne_bytes([value[1], value[2]]);
+                Ok(OperationCode::JumpIfFalse(bytes_to_skip))
+            }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
     }
@@ -225,6 +252,12 @@ pub struct Chunk {
     lines: Vec<usize>,
     /// array of constatns
     constants: ValueContainer,
+}
+
+#[derive(Debug)]
+pub enum ChunkError {
+    PatchingNotJumpInstruction,
+    PatchingOutsideOfbounds,
 }
 
 impl Chunk {
@@ -247,6 +280,24 @@ impl Chunk {
         self.lines.extend_from_slice(&(vec![line; bytes.len()]));
     }
 
+    pub fn patch_jump_instruction(
+        &mut self,
+        instruction: OperationCode,
+        instruction_index: usize,
+        bytes_to_skip: u16,
+    ) -> Result<(), ChunkError> {
+        if instruction_index >= self.get_instructions_length() {
+            return Err(ChunkError::PatchingOutsideOfbounds);
+        }
+        if self.instructions[instruction_index] != u8::from(instruction) {
+            return Err(ChunkError::PatchingNotJumpInstruction);
+        }
+        let bytes = bytes_to_skip.to_ne_bytes();
+        self.instructions[instruction_index + 1] = bytes[0];
+        self.instructions[instruction_index + 2] = bytes[1];
+        Ok(())
+    }
+
     /// return index at which constant is stored
     pub fn add_constant(&mut self, constant: Value) -> usize {
         self.constants.add_value(constant);
@@ -259,10 +310,10 @@ impl Chunk {
     ) -> Result<OperationCode, OperationCodeConversionError> {
         // For now we will just return the slice starting from offset and taking as much bytes as much the longest instruction can take
         // May be in the future it should be somehow improved
-        let finish = if offset + 2 >= self.get_instructions_length() {
+        let finish = if offset + LONGEST_INSTRUCTION_LENGTH >= self.get_instructions_length() {
             self.get_instructions_length()
         } else {
-            offset + 2
+            offset + LONGEST_INSTRUCTION_LENGTH
         };
         OperationCode::try_from(&self.instructions[offset..finish])
     }
