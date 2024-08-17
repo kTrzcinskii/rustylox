@@ -552,12 +552,36 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.compile_expression();
         self.consume(TokenType::RightParen, "Expect ')' after condition.");
 
-        let jump_instruction_index =
+        // Instruction for skipping then branch if condition is false
+        let skip_then_branch_instruction_index =
             self.emit_jump_instruction(OperationCode::JumpIfFalse(u16::MAX));
 
+        // Then branch
         self.compile_statement();
 
-        self.patch_jump_instruction(OperationCode::JumpIfFalse(u16::MAX), jump_instruction_index);
+        // Instruction for skipping else branch - part of then branch
+        let skip_else_branch_instruction_index =
+            self.emit_jump_instruction(OperationCode::Jump(u16::MAX));
+        // End of then branch
+
+        // Patching here means that everything that was compiled between here and the point where jump instruction itself
+        // was emitted will be skipped by jump instruction
+        self.patch_jump_instruction(
+            OperationCode::JumpIfFalse(u16::MAX),
+            skip_then_branch_instruction_index,
+        );
+
+        if self.match_current(&TokenType::Else) {
+            // Else branch
+            self.compile_statement();
+            // End of else branch
+        }
+
+        // Same as before
+        self.patch_jump_instruction(
+            OperationCode::Jump(u16::MAX),
+            skip_else_branch_instruction_index,
+        );
     }
 
     fn parse_precendence(&mut self, precedence: Precedence) {

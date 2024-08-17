@@ -289,6 +289,9 @@ impl VirtualMachine {
                         self.instruction_pointer += bytes_to_skip as usize;
                     }
                 }
+                OperationCode::Jump(bytes_to_skip) => {
+                    self.instruction_pointer += bytes_to_skip as usize;
+                }
             }
         }
     }
