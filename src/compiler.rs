@@ -244,7 +244,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             TokenType::Fun => return Err(CompilerError::EmptyFunction),
             TokenType::If => return Err(CompilerError::EmptyFunction),
             TokenType::Nil => return Err(CompilerError::EmptyFunction),
-            TokenType::Or => return Err(CompilerError::EmptyFunction),
+            TokenType::Or => self.handle_or(),
             TokenType::Print => return Err(CompilerError::EmptyFunction),
             TokenType::Return => return Err(CompilerError::EmptyFunction),
             TokenType::Super => return Err(CompilerError::EmptyFunction),
@@ -603,6 +603,20 @@ impl<'a, 'b> Compiler<'a, 'b> {
         );
     }
 
+    fn handle_or(&mut self) {
+        let skip_right_operand_instruction_index =
+            self.emit_jump_instruction(OperationCode::JumpIfTrue(u16::MAX));
+
+        // If left operand is falsey then we pop it from the stack and leave right operand on the stack
+        self.emit_instruction(OperationCode::PopStack);
+        self.parse_precendence(Precedence::Or);
+
+        self.patch_jump_instruction(
+            OperationCode::JumpIfTrue(u16::MAX),
+            skip_right_operand_instruction_index,
+        )
+    }
+
     fn parse_precendence(&mut self, precedence: Precedence) {
         self.advance();
         let can_assign = precedence as u8 <= Precedence::Assignment as u8;
@@ -882,7 +896,7 @@ impl From<&TokenType> for Precedence {
             TokenType::Fun => Precedence::None,
             TokenType::If => Precedence::None,
             TokenType::Nil => Precedence::None,
-            TokenType::Or => Precedence::None,
+            TokenType::Or => Precedence::Or,
             TokenType::Print => Precedence::None,
             TokenType::Return => Precedence::None,
             TokenType::Super => Precedence::None,

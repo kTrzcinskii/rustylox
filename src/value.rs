@@ -198,8 +198,8 @@ impl Value {
             ValueType::Bool => !self.get_bool().expect("Bool type should contain bool"),
             ValueType::Nil => true,
             ValueType::Number => false,
-            ValueType::StringObject => true,
-            // ValueType::HeapObject => true,
+            ValueType::StringObject => false,
+            // ValueType::HeapObject => false,
         }
     }
 
