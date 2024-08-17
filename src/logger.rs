@@ -124,7 +124,17 @@ impl Logger {
                 OperationCode::SetLocal(local_index) => {
                     return Ok(Self::byte_instruction("OP_SET_LOCAL", offset, local_index))
                 }
-                OperationCode::JumpIfFalse(_) => todo!(),
+                OperationCode::JumpIfFalse(bytes_to_skip) => {
+                    return Ok(Self::jump_instruction(
+                        "OP_JUMP_IF_FALSE",
+                        1,
+                        offset,
+                        bytes_to_skip,
+                    ))
+                }
+                OperationCode::Jump(bytes_to_skip) => {
+                    return Ok(Self::jump_instruction("OP_JUMP", 1, offset, bytes_to_skip))
+                }
             }
         }
         Ok(0)
@@ -151,7 +161,7 @@ impl Logger {
     fn constant_instruction(
         name: &str,
         offset: usize,
-        constant_index: usize,
+        constant_index: u8,
         constant_value: Value,
     ) -> usize {
         print!("{:<16} {:>4} '", name, constant_index);
@@ -161,8 +171,24 @@ impl Logger {
     }
 
     #[cfg(feature = "log_trace_execution")]
-    fn byte_instruction(name: &str, offset: usize, index: usize) -> usize {
+    fn byte_instruction(name: &str, offset: usize, index: u8) -> usize {
         println!("{:<16} {:>4}", name, index);
         offset + OperationCode::get_instruction_bytes_length(&OperationCode::GetLocal(index))
+    }
+
+    #[cfg(feature = "log_trace_execution")]
+    fn jump_instruction(name: &str, direction: i16, offset: usize, bytes_to_skip: u16) -> usize {
+        use crate::chunk;
+
+        let len = chunk::JUMP_INSTRUCTION_ARGUMENT_LENGTH + 1;
+
+        println!(
+            "{:<16} {:>4} -> {}",
+            name,
+            offset,
+            (offset + len) as i16 + (direction * bytes_to_skip as i16)
+        );
+
+        offset + len
     }
 }

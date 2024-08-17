@@ -556,7 +556,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let skip_then_branch_instruction_index =
             self.emit_jump_instruction(OperationCode::JumpIfFalse(u16::MAX));
 
+        // Both branches must pop stack from the value - the condition that was used to determine which branch to choose
+        // If else isn't used then it implicitily is just POP_STACK instruction
+
         // Then branch
+        self.emit_instruction(OperationCode::PopStack);
         self.compile_statement();
 
         // Instruction for skipping else branch - part of then branch
@@ -571,11 +575,12 @@ impl<'a, 'b> Compiler<'a, 'b> {
             skip_then_branch_instruction_index,
         );
 
+        // Else branch
+        self.emit_instruction(OperationCode::PopStack);
         if self.match_current(&TokenType::Else) {
-            // Else branch
             self.compile_statement();
-            // End of else branch
         }
+        // End of else branch
 
         // Same as before
         self.patch_jump_instruction(
