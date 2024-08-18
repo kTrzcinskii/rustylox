@@ -638,6 +638,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn handle_while_statement(&mut self) {
+        // While statement body
         let while_statement_start_index = self
             .compiling_chunk
             .as_ref()
@@ -650,7 +651,6 @@ impl<'a, 'b> Compiler<'a, 'b> {
         let skip_while_body_instruction_index =
             self.emit_jump_instruction(OperationCode::JumpIfFalse(u16::MAX));
 
-        // While statement body
         self.emit_instruction(OperationCode::PopStack);
         self.compile_statement();
         self.emit_jump_back_instruction(while_statement_start_index);
@@ -661,6 +661,65 @@ impl<'a, 'b> Compiler<'a, 'b> {
             skip_while_body_instruction_index,
         );
         self.emit_instruction(OperationCode::PopStack);
+    }
+
+    fn handle_for_statement(&mut self) {
+        self.start_scope();
+        self.consume(TokenType::LeftParen, "Expect '(' after 'for'.");
+        if self.match_current(&TokenType::Semicolon) {
+            // No initializer
+        } else if self.match_current(&TokenType::Var) {
+            self.handle_var_declaration();
+        } else {
+            self.handle_expression_statement();
+        }
+
+        // For statement body
+        // It's mutable because it might be changed to point to the incrementer
+        let mut for_statement_start_index = self
+            .compiling_chunk
+            .as_ref()
+            .expect("Compiling chunk shouldn't be empty during compilation.")
+            .get_instructions_length();
+
+        let mut skip_for_body_instruction_index: Option<usize> = None;
+        if !self.match_current(&TokenType::Semicolon) {
+            self.compile_expression();
+            self.consume(TokenType::Semicolon, "Expect ';' after for loop condition.");
+            skip_for_body_instruction_index =
+                Some(self.emit_jump_instruction(OperationCode::JumpIfFalse(u16::MAX)));
+            // Remove condition result from the stack
+            self.emit_instruction(OperationCode::PopStack);
+        }
+
+        if !self.match_current(&TokenType::RightParen) {
+            let jump_to_body = self.emit_jump_instruction(OperationCode::Jump(u16::MAX));
+            let increment_start = self
+                .compiling_chunk
+                .as_ref()
+                .expect("Compiling chunk shouldn't be empty during compilation.")
+                .get_instructions_length();
+
+            // Execute incrementer
+            self.compile_expression();
+            // Remove expression result from the stack - we call incrementer only for side effect
+            self.emit_instruction(OperationCode::PopStack);
+            self.consume(TokenType::RightParen, "Expect ')' after for clauses.");
+
+            self.emit_jump_back_instruction(for_statement_start_index);
+            for_statement_start_index = increment_start;
+            self.patch_jump_instruction(OperationCode::Jump(u16::MAX), jump_to_body);
+        }
+
+        self.compile_statement();
+        self.emit_jump_back_instruction(for_statement_start_index);
+        // End of for statement body
+
+        if let Some(index) = skip_for_body_instruction_index {
+            self.patch_jump_instruction(OperationCode::JumpIfFalse(u16::MAX), index);
+            self.emit_instruction(OperationCode::PopStack);
+        }
+        self.end_scope();
     }
 
     fn parse_precendence(&mut self, precedence: Precedence) {
@@ -820,6 +879,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
     fn compile_statement(&mut self) {
         if self.match_current(&TokenType::Print) {
             self.handle_print_statement();
+        } else if self.match_current(&TokenType::For) {
+            self.handle_for_statement();
         } else if self.match_current(&TokenType::If) {
             self.handle_if_statement();
         } else if self.match_current(&TokenType::While) {
