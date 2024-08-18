@@ -143,6 +143,14 @@ impl Logger {
                         bytes_to_skip,
                     ))
                 }
+                OperationCode::JumpBack(bytes_to_skip) => {
+                    return Ok(Self::jump_instruction(
+                        "OP_JUMP_BACK",
+                        -1,
+                        offset,
+                        bytes_to_skip,
+                    ))
+                }
             }
         }
         Ok(0)

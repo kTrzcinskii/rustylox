@@ -38,6 +38,8 @@ pub enum OperationCode {
     Jump(u16),
     /// Jump if stack top is true, arguments: (number of bytes to skip)
     JumpIfTrue(u16),
+    /// Jump back unconditionally, arguments: (number of bytes to skip)
+    JumpBack(u16),
 }
 
 impl OperationCode {
@@ -67,6 +69,7 @@ impl OperationCode {
             OperationCode::JumpIfFalse(_) => 3,
             OperationCode::Jump(_) => 3,
             OperationCode::JumpIfTrue(_) => 3,
+            OperationCode::JumpBack(_) => 3,
         }
     }
 }
@@ -98,6 +101,7 @@ impl From<OperationCode> for u8 {
             OperationCode::JumpIfFalse(_) => 21,
             OperationCode::Jump(_) => 22,
             OperationCode::JumpIfTrue(_) => 23,
+            OperationCode::JumpBack(_) => 24,
         }
     }
 }
@@ -161,6 +165,14 @@ impl From<OperationCode> for Vec<u8> {
                 let number_in_bytes = bytes_to_skip.to_ne_bytes();
                 vec![
                     u8::from(OperationCode::JumpIfTrue(bytes_to_skip)),
+                    number_in_bytes[0],
+                    number_in_bytes[1],
+                ]
+            }
+            OperationCode::JumpBack(bytes_to_skip) => {
+                let number_in_bytes = bytes_to_skip.to_ne_bytes();
+                vec![
+                    u8::from(OperationCode::JumpBack(bytes_to_skip)),
                     number_in_bytes[0],
                     number_in_bytes[1],
                 ]
@@ -284,7 +296,17 @@ impl TryFrom<&[u8]> for OperationCode {
                 let bytes_to_skip = u16::from_ne_bytes([value[1], value[2]]);
                 Ok(OperationCode::JumpIfTrue(bytes_to_skip))
             }
-
+            24 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::JumpBack(
+                        u16::MAX,
+                    ))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                let bytes_to_skip = u16::from_ne_bytes([value[1], value[2]]);
+                Ok(OperationCode::JumpBack(bytes_to_skip))
+            }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
     }
