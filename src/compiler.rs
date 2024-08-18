@@ -344,6 +344,26 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }
     }
 
+    fn emit_jump_back_instruction(&mut self, jump_to_index: usize) {
+        let bytes_to_skip = self
+            .compiling_chunk
+            .as_ref()
+            .unwrap()
+            .get_instructions_length()
+            - jump_to_index
+            // Because we must also jump over the jump instruction itself
+            + OperationCode::get_instruction_bytes_length(&OperationCode::JumpBack(u16::MAX));
+
+        if bytes_to_skip > u16::MAX as usize {
+            self.handle_error_at_token(
+                &self.parser.previous.unwrap(),
+                "COuldn't jump back over so many bytes.",
+            );
+            return;
+        }
+        self.emit_instruction(OperationCode::JumpBack(bytes_to_skip as u16));
+    }
+
     fn emit_double_instruction(&mut self, first: OperationCode, second: OperationCode) {
         self.emit_instruction(first);
         self.emit_instruction(second);
@@ -517,7 +537,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 let global_index = self.make_identifier_constant(name);
                 (
                     OperationCode::GetGlobal(global_index),
-                    OperationCode::SetLocal(global_index),
+                    OperationCode::SetGlobal(global_index),
                 )
             }
             Err(LocalVariableError::UsedInOwnInitializer) => {
@@ -615,6 +635,32 @@ impl<'a, 'b> Compiler<'a, 'b> {
             OperationCode::JumpIfTrue(u16::MAX),
             skip_right_operand_instruction_index,
         )
+    }
+
+    fn handle_while_statement(&mut self) {
+        let while_statement_start_index = self
+            .compiling_chunk
+            .as_ref()
+            .expect("Compiling chunk shouldn't be empty during compilation.")
+            .get_instructions_length();
+        self.consume(TokenType::LeftParen, "Expect '(' after 'while'.");
+        self.compile_expression();
+        self.consume(TokenType::RightParen, "Expect ')' after condition.");
+
+        let skip_while_body_instruction_index =
+            self.emit_jump_instruction(OperationCode::JumpIfFalse(u16::MAX));
+
+        // While statement body
+        self.emit_instruction(OperationCode::PopStack);
+        self.compile_statement();
+        self.emit_jump_back_instruction(while_statement_start_index);
+        // End of while statement body
+
+        self.patch_jump_instruction(
+            OperationCode::JumpIfFalse(u16::MAX),
+            skip_while_body_instruction_index,
+        );
+        self.emit_instruction(OperationCode::PopStack);
     }
 
     fn parse_precendence(&mut self, precedence: Precedence) {
@@ -776,6 +822,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
             self.handle_print_statement();
         } else if self.match_current(&TokenType::If) {
             self.handle_if_statement();
+        } else if self.match_current(&TokenType::While) {
+            self.handle_while_statement();
         } else if self.match_current(&TokenType::LeftBrace) {
             self.start_scope();
             self.handle_block_statement();
