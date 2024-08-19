@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{cell::RefCell, mem::ManuallyDrop, rc::Rc};
 
-use crate::table::Table;
+use crate::{chunk::Chunk, table::Table};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ValueType {
@@ -9,7 +9,7 @@ pub enum ValueType {
     Nil,
     Number,
     StringObject,
-    //HeapObject,
+    FunctionObject,
 }
 
 #[derive(Clone)]
@@ -57,29 +57,54 @@ impl StringObject {
     }
 }
 
-// TODO: will be useful in the next steps
-// #[derive(Clone)]
-// pub enum HeapObject {
-// }
+pub struct FunctionObject {
+    charity: usize,
+    pub chunk: Chunk,
+    name: Rc<RefCell<StringObject>>,
+}
 
-// impl HeapObject {
-//     pub fn are_objects_equal(lhs: &HeapObject, rhs: &HeapObject) -> bool {
-//     }
-// }
+impl FunctionObject {
+    fn new() -> Self {
+        FunctionObject {
+            charity: 0,
+            chunk: Chunk::new(),
+            name: StringObject::new_rc("test"),
+        }
+    }
 
-// impl fmt::Display for HeapObject {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         match self {
-//         }
-//     }
-// }
+    fn transform_to_rc(self) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(self))
+    }
+
+    pub fn new_rc() -> Rc<RefCell<Self>> {
+        Self::new().transform_to_rc()
+    }
+
+    pub fn are_equal_rc(
+        lhs: &Rc<RefCell<FunctionObject>>,
+        rhs: &Rc<RefCell<FunctionObject>>,
+    ) -> bool {
+        Rc::ptr_eq(lhs, rhs)
+    }
+}
+
+impl From<Rc<RefCell<FunctionObject>>> for Value {
+    fn from(value: Rc<RefCell<FunctionObject>>) -> Self {
+        Value {
+            value_type: ValueType::FunctionObject,
+            actual_value: UnderlyingValue {
+                function_object: ManuallyDrop::new(value),
+            },
+        }
+    }
+}
 
 #[repr(C)]
 union UnderlyingValue {
     boolean: bool,
     number: f64,
     string_object: ManuallyDrop<Rc<RefCell<StringObject>>>,
-    // object: ManuallyDrop<Rc<RefCell<HeapObject>>>,
+    function_object: ManuallyDrop<Rc<RefCell<FunctionObject>>>,
 }
 
 pub struct Value {
@@ -138,26 +163,6 @@ impl Value {
         self.value_type == ValueType::Nil
     }
 
-    // pub fn new_heap_object(value: HeapObject) -> Value {
-    //     Value {
-    //         value_type: ValueType::HeapObject,
-    //         actual_value: UnderlyingValue {
-    //             object: ManuallyDrop::new(Rc::new(RefCell::new(value))),
-    //         },
-    //     }
-    // }
-
-    // pub fn is_heap_object(&self) -> bool {
-    //     self.value_type == ValueType::HeapObject
-    // }
-
-    // pub fn get_heap_object(&self) -> Result<&Rc<RefCell<HeapObject>>, ValueInterpretingError> {
-    //     match self.value_type {
-    //         ValueType::HeapObject => unsafe { Ok(&self.actual_value.object) },
-    //         _ => Err(ValueInterpretingError {}),
-    //     }
-    // }
-
     pub fn new_string_object(value: &str, intern_strings: &mut Table) -> Value {
         if let Some(already_existing) = intern_strings.find_string(value) {
             return Value {
@@ -189,6 +194,28 @@ impl Value {
         }
     }
 
+    pub fn new_function_object() -> Value {
+        Value {
+            value_type: ValueType::FunctionObject,
+            actual_value: UnderlyingValue {
+                function_object: ManuallyDrop::new(FunctionObject::new_rc()),
+            },
+        }
+    }
+
+    pub fn is_function_object(&self) -> bool {
+        self.value_type == ValueType::FunctionObject
+    }
+
+    pub fn get_function_object(
+        &self,
+    ) -> Result<&Rc<RefCell<FunctionObject>>, ValueInterpretingError> {
+        match self.value_type {
+            ValueType::FunctionObject => unsafe { Ok(&self.actual_value.function_object) },
+            _ => Err(ValueInterpretingError {}),
+        }
+    }
+
     pub fn get_type(&self) -> ValueType {
         self.value_type
     }
@@ -199,7 +226,7 @@ impl Value {
             ValueType::Nil => true,
             ValueType::Number => false,
             ValueType::StringObject => false,
-            // ValueType::HeapObject => false,
+            ValueType::FunctionObject => false,
         }
     }
 
@@ -223,14 +250,7 @@ impl Value {
                 rhs.get_string_object()
                     .expect("StringObject type should contain String Object"),
             ),
-            // ValueType::HeapObject => {
-            //     let lhs_unwrap = lhs
-            //         .get_heap_object()
-            //         .expect("HeapObject type should contain heap object");
-            //     let rhs_unwrap = rhs
-            //         .get_heap_object()
-            //         .expect("HeapObject type should contain heap object");
-            //     HeapObject::are_objects_equal(&lhs_unwrap.borrow(), &rhs_unwrap.borrow())
+            ValueType::FunctionObject => todo!(),
         }
     }
 }
@@ -247,17 +267,17 @@ impl Clone for Value {
                     .get_number()
                     .expect("Number type type should contain number"),
             },
-            // ValueType::HeapObject => UnderlyingValue {
-            //     object: ManuallyDrop::new(
-            //         self.get_heap_object()
-            //             .expect("HeapObject type should contain heap object")
-            //             .clone(),
-            //     ),
-            // },
             ValueType::StringObject => UnderlyingValue {
                 string_object: ManuallyDrop::new(
                     self.get_string_object()
                         .expect("StringObject type should contain String Object")
+                        .clone(),
+                ),
+            },
+            ValueType::FunctionObject => UnderlyingValue {
+                function_object: ManuallyDrop::new(
+                    self.get_function_object()
+                        .expect("FunctionObject type should containt Function Object")
                         .clone(),
                 ),
             },
@@ -271,13 +291,10 @@ impl Clone for Value {
 
 impl Drop for Value {
     fn drop(&mut self) {
-        // if self.is_heap_object() {
-        //     unsafe {
-        //         ManuallyDrop::drop(&mut self.actual_value.object);
-        //     }
-        // }
         if self.is_string_object() {
             unsafe { ManuallyDrop::drop(&mut self.actual_value.string_object) }
+        } else if self.is_function_object() {
+            unsafe { ManuallyDrop::drop(&mut self.actual_value.function_object) }
         }
     }
 }
@@ -304,13 +321,17 @@ impl fmt::Display for Value {
                     .expect("StringObject type should contain String Object")
                     .borrow()
                     .get_value()
-            ), // ValueType::HeapObject => write!(
-               //     f,
-               //     "{}",
-               //     self.get_heap_object()
-               //         .expect("HeapObject type should contain heap object")
-               //         .borrow()
-               // ),
+            ),
+            ValueType::FunctionObject => write!(
+                f,
+                "<fn {}>",
+                self.get_function_object()
+                    .expect("FunctionObject type should containt Function Object")
+                    .borrow()
+                    .name
+                    .borrow()
+                    .get_value()
+            ),
         }
     }
 }
