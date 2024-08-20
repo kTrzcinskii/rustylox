@@ -64,11 +64,11 @@ pub struct FunctionObject {
 }
 
 impl FunctionObject {
-    fn new() -> Self {
+    fn new(name: &str) -> Self {
         FunctionObject {
             charity: 0,
             chunk: Chunk::new(),
-            name: StringObject::new_rc("test"),
+            name: StringObject::new_rc(name),
         }
     }
 
@@ -76,8 +76,8 @@ impl FunctionObject {
         Rc::new(RefCell::new(self))
     }
 
-    pub fn new_rc() -> Rc<RefCell<Self>> {
-        Self::new().transform_to_rc()
+    pub fn new_rc(name: &str) -> Rc<RefCell<Self>> {
+        Self::new(name).transform_to_rc()
     }
 
     pub fn are_equal_rc(
@@ -194,11 +194,11 @@ impl Value {
         }
     }
 
-    pub fn new_function_object() -> Value {
+    pub fn new_function_object(name: &str) -> Value {
         Value {
             value_type: ValueType::FunctionObject,
             actual_value: UnderlyingValue {
-                function_object: ManuallyDrop::new(FunctionObject::new_rc()),
+                function_object: ManuallyDrop::new(FunctionObject::new_rc(name)),
             },
         }
     }
