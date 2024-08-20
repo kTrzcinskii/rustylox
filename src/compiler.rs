@@ -1,11 +1,12 @@
 use core::panic;
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    chunk::{self, Chunk, OperationCode},
+    chunk::{self, OperationCode},
     lexer::{Lexer, Token, TokenType},
     logger::Logger,
     table::Table,
-    value::Value,
+    value::{FunctionObject, Value},
 };
 
 struct Local {
@@ -15,11 +16,17 @@ struct Local {
     depth: i32,
 }
 
+pub enum FunctionType {
+    Function, // Normal function
+    Script,   // Top level function - whole global scope is put in here
+}
+
 pub struct Compiler<'a, 'b> {
     parser: Parser,
     lexer: Lexer<'a>,
     source: &'a str,
-    compiling_chunk: Option<Chunk>,
+    function: Rc<RefCell<FunctionObject>>,
+    function_type: FunctionType,
     intern_strings: Option<&'b mut Table>,
     locals: Vec<Local>,
     current_scope_depth: i32,
@@ -27,7 +34,6 @@ pub struct Compiler<'a, 'b> {
 
 #[derive(Debug)]
 pub enum CompilerError {
-    EmptyChunk,
     ParserInErrorState,
     EmptyFunction,
     EmptyInternStrings,
@@ -45,19 +51,34 @@ struct PrefixFunctionsArguments {
 }
 
 impl<'a, 'b> Compiler<'a, 'b> {
-    pub fn new(source: &'a str) -> Self {
+    pub fn new(source: &'a str, function_type: FunctionType) -> Self {
+        // First local is for VM internal use - it stores function that is currently being executed in runtime
+        let locals = vec![Local {
+            name: Token {
+                token_type: TokenType::Identifier,
+                start: 0,
+                length: 0,
+                line: 0,
+            },
+            depth: 0,
+        }];
+
         Compiler {
             parser: Parser::new(),
             lexer: Lexer::new(source),
             source,
-            compiling_chunk: Some(Chunk::new()),
+            function: FunctionObject::new_rc("GLOBAL_SCRIPT"),
+            function_type,
             intern_strings: None,
-            locals: Vec::new(),
+            locals,
             current_scope_depth: 0,
         }
     }
 
-    pub fn compile(&mut self, intern_strings: &'b mut Table) -> Result<Chunk, CompilerError> {
+    pub fn compile(
+        &mut self,
+        intern_strings: &'b mut Table,
+    ) -> Result<Rc<RefCell<FunctionObject>>, CompilerError> {
         self.intern_strings = Some(intern_strings);
         self.advance();
 
@@ -68,15 +89,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.end_compiler();
 
         if !self.parser.in_error_state {
-            Logger::disassemble_chunk(self.compiling_chunk.as_ref().unwrap(), "Compiled code")
-                .unwrap();
+            Logger::disassemble_chunk(&self.function.borrow().chunk, "Compiled code").unwrap();
         }
 
         match self.parser.in_error_state {
-            false => Ok(self
-                .compiling_chunk
-                .take()
-                .ok_or(CompilerError::EmptyChunk)?),
+            false => Ok(self.function.clone()),
             true => Err(CompilerError::ParserInErrorState),
         }
     }
@@ -295,29 +312,22 @@ impl<'a, 'b> Compiler<'a, 'b> {
             // This might happen if there are no tokens
             None => 0,
         };
-        // We assume that there is no possibility that compiling chunk will ever be unset (after calling the only public function - "compile")
-        self.compiling_chunk
-            .as_mut()
-            .unwrap()
+        self.function
+            .borrow_mut()
+            .chunk
             .add_instruction(instruction, line);
     }
 
     fn emit_jump_instruction(&mut self, instruction: OperationCode) -> usize {
         self.emit_instruction(instruction);
-        self.compiling_chunk
-            .as_ref()
-            .expect("Chunk shouldn't be empty during compilation.")
+        self.function.borrow().chunk
             .get_instructions_length()
             // + 1, so we end up on the byte that starts the instruction
             - (chunk::JUMP_INSTRUCTION_ARGUMENT_LENGTH + 1)
     }
 
     fn patch_jump_instruction(&mut self, instruction: OperationCode, instruction_index: usize) {
-        let bytes_to_skip = self
-            .compiling_chunk
-            .as_ref()
-            .expect("Compiling chunk shouldn't be empty while compiling.")
-            .get_instructions_length()
+        let bytes_to_skip = self.function.borrow().chunk.get_instructions_length()
             - (instruction_index + chunk::JUMP_INSTRUCTION_ARGUMENT_LENGTH + 1);
 
         if bytes_to_skip > u16::MAX as usize {
@@ -328,12 +338,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
             return;
         }
 
-        match self
-            .compiling_chunk
-            .as_mut()
-            .expect("Compiling chunk shouldn't be empty while compiling.")
-            .patch_jump_instruction(instruction, instruction_index, bytes_to_skip as u16)
-        {
+        let patch_jump_result = self.function.borrow_mut().chunk.patch_jump_instruction(
+            instruction,
+            instruction_index,
+            bytes_to_skip as u16,
+        );
+
+        match patch_jump_result {
             Ok(_) => {}
             Err(_) => {
                 self.handle_error_at_token(
@@ -346,9 +357,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn emit_jump_back_instruction(&mut self, jump_to_index: usize) {
         let bytes_to_skip = self
-            .compiling_chunk
-            .as_ref()
-            .unwrap()
+            .function.borrow().chunk
             .get_instructions_length()
             - jump_to_index
             // Because we must also jump over the jump instruction itself
@@ -383,11 +392,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn make_constant(&mut self, constant: Value) -> usize {
-        // We assume that there is no possibility that compiling chunk will ever be unset (after calling the only public function - "compile")
-        self.compiling_chunk
-            .as_mut()
-            .unwrap()
-            .add_constant(constant)
+        self.function.borrow_mut().chunk.add_constant(constant)
     }
 
     fn make_identifier_constant(&mut self, token: &Token) -> u8 {
@@ -639,11 +644,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn handle_while_statement(&mut self) {
         // While statement body
-        let while_statement_start_index = self
-            .compiling_chunk
-            .as_ref()
-            .expect("Compiling chunk shouldn't be empty during compilation.")
-            .get_instructions_length();
+        let while_statement_start_index = self.function.borrow().chunk.get_instructions_length();
         self.consume(TokenType::LeftParen, "Expect '(' after 'while'.");
         self.compile_expression();
         self.consume(TokenType::RightParen, "Expect ')' after condition.");
@@ -676,11 +677,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         // For statement body
         // It's mutable because it might be changed to point to the incrementer
-        let mut for_statement_start_index = self
-            .compiling_chunk
-            .as_ref()
-            .expect("Compiling chunk shouldn't be empty during compilation.")
-            .get_instructions_length();
+        let mut for_statement_start_index = self.function.borrow().chunk.get_instructions_length();
 
         let mut skip_for_body_instruction_index: Option<usize> = None;
         if !self.match_current(&TokenType::Semicolon) {
@@ -694,11 +691,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         if !self.match_current(&TokenType::RightParen) {
             let jump_to_body = self.emit_jump_instruction(OperationCode::Jump(u16::MAX));
-            let increment_start = self
-                .compiling_chunk
-                .as_ref()
-                .expect("Compiling chunk shouldn't be empty during compilation.")
-                .get_instructions_length();
+            let increment_start = self.function.borrow().chunk.get_instructions_length();
 
             // Execute incrementer
             self.compile_expression();

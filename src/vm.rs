@@ -1,9 +1,11 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
-    chunk::{Chunk, OperationCode, OperationCodeConversionError},
-    compiler::Compiler,
+    chunk::{OperationCode, OperationCodeConversionError},
+    compiler::{Compiler, FunctionType},
     logger::Logger,
     table::{InsertResult, Table},
-    value::{StringObject, Value, ValueType},
+    value::{FunctionObject, StringObject, Value, ValueType},
 };
 
 pub enum InterpretResult {
@@ -23,9 +25,18 @@ pub enum VirtualMachineError {
     UndefinedVariable,
 }
 
-pub struct VirtualMachine {
-    /// Index of the next instruction to be executed on given Chunk
+struct CallFrame {
+    /// Function that was called
+    function: Rc<RefCell<FunctionObject>>,
+    /// Index of next to execute instruction in function chunk
     instruction_pointer: usize,
+    /// Index of stack where frame local variables start
+    stack_start: u8,
+}
+
+pub struct VirtualMachine {
+    /// Internal stack holding current function invocations stack
+    frames: Vec<CallFrame>,
     /// Internal stack for holding literals
     stack: Vec<Value>,
     /// Collection of intern strings
@@ -44,7 +55,7 @@ impl VirtualMachine {
 
     pub fn new() -> Self {
         VirtualMachine {
-            instruction_pointer: 0,
+            frames: Vec::with_capacity(Self::INITIAL_STACK_SIZE),
             stack: Vec::with_capacity(Self::INITIAL_STACK_SIZE),
             strings: Table::new(),
             globals: Table::new(),
@@ -60,34 +71,56 @@ impl VirtualMachine {
     }
 
     pub fn interpret(&mut self, source: &str) -> InterpretResult {
-        let mut compiler = Compiler::new(source);
-        match compiler.compile(&mut self.strings) {
-            Ok(chunk) => {
-                self.instruction_pointer = 0;
-                match self.run(&chunk) {
+        let mut compiler = Compiler::new(source, FunctionType::Script);
+        let compile_result = compiler.compile(&mut self.strings);
+        match compile_result {
+            Ok(function) => {
+                self.stack_push(Value::from(function.clone()));
+                self.frames.push(CallFrame {
+                    function,
+                    instruction_pointer: 0,
+                    stack_start: (self.stack.len() - 1) as u8,
+                });
+                let result = match self.run() {
                     Ok(_) => InterpretResult::Ok,
                     Err(_) => InterpretResult::RuntimeError,
-                }
+                };
+                // TODO: after implementing whole function logic check if this makes sense
+                self.stack_pop().expect("Should remove first element - the global script function - to leave stack empty for future repl interpreting");
+                result
             }
             Err(_) => InterpretResult::CompileError,
         }
     }
 
-    fn run(&mut self, chunk: &Chunk) -> Result<InterpretResult, VirtualMachineError> {
+    fn run(&mut self) -> Result<InterpretResult, VirtualMachineError> {
+        // TODO: properly wire it up with the rest call frames logic in the future
+        let mut frame = self.frames.pop().expect("Shouldn't be empty.");
         loop {
             Logger::show_stack_content(&self.stack);
-            Logger::disassemble_instruction(chunk, self.instruction_pointer).unwrap();
+            Logger::disassemble_instruction(
+                &frame.function.borrow().chunk,
+                frame.instruction_pointer,
+            )
+            .unwrap();
 
-            let instruction = chunk
-                .read_operation_code(self.instruction_pointer)
+            let instruction = frame
+                .function
+                .borrow_mut()
+                .chunk
+                .read_operation_code(frame.instruction_pointer)
                 .map_err(VirtualMachineError::InvalidInstructionFormat)?;
-            self.instruction_pointer += OperationCode::get_instruction_bytes_length(&instruction);
+            frame.instruction_pointer += OperationCode::get_instruction_bytes_length(&instruction);
             match instruction {
                 OperationCode::Return => {
                     return Ok(InterpretResult::Ok);
                 }
                 OperationCode::Constant(constant_index) => {
-                    let value = chunk.read_constant(constant_index);
+                    let value = frame
+                        .function
+                        .borrow_mut()
+                        .chunk
+                        .read_constant(constant_index);
                     self.stack_push(value);
                 }
                 OperationCode::Negate => {
@@ -95,7 +128,7 @@ impl VirtualMachine {
                     match Value::get_number(&value) {
                         Ok(num_value) => self.stack_push(Value::new_number(-num_value)),
                         Err(_) => {
-                            self.runtime_error_message("Operand must be a number", chunk);
+                            self.runtime_error_message("Operand must be a number", &frame);
                             return Err(VirtualMachineError::InvalidVariableType);
                         }
                     }
@@ -109,7 +142,7 @@ impl VirtualMachine {
                             Err(VirtualMachineError::InvalidVariableType) => {
                                 self.runtime_error_message(
                                     "Both operands must be numbers or strings",
-                                    chunk,
+                                    &frame,
                                 );
                                 return Err(VirtualMachineError::InvalidVariableType);
                             }
@@ -120,7 +153,7 @@ impl VirtualMachine {
                             Err(VirtualMachineError::InvalidVariableType) => {
                                 self.runtime_error_message(
                                     "Both operands must be numbers or strings",
-                                    chunk,
+                                    &frame,
                                 );
                                 return Err(VirtualMachineError::InvalidVariableType);
                             }
@@ -129,7 +162,7 @@ impl VirtualMachine {
                         _ => {
                             self.runtime_error_message(
                                 "Both operand must be numbers or strings",
-                                chunk,
+                                &frame,
                             );
                             return Err(VirtualMachineError::InvalidVariableType);
                         }
@@ -140,7 +173,7 @@ impl VirtualMachine {
                     match self.substract_numbers(&args.lhs, &args.rhs) {
                         Ok(value) => self.stack_push(value),
                         Err(VirtualMachineError::InvalidVariableType) => {
-                            self.runtime_error_message("Both operands must be numbers", chunk);
+                            self.runtime_error_message("Both operands must be numbers", &frame);
                             return Err(VirtualMachineError::InvalidVariableType);
                         }
                         Err(_) => panic!("Shouldn't raise any other type of error"),
@@ -151,7 +184,7 @@ impl VirtualMachine {
                     match self.multiply_numbers(&args.lhs, &args.rhs) {
                         Ok(value) => self.stack_push(value),
                         Err(VirtualMachineError::InvalidVariableType) => {
-                            self.runtime_error_message("Both operands must be numbers", chunk);
+                            self.runtime_error_message("Both operands must be numbers", &frame);
                             return Err(VirtualMachineError::InvalidVariableType);
                         }
                         Err(_) => panic!("Shouldn't raise any other type of error"),
@@ -162,11 +195,11 @@ impl VirtualMachine {
                     match self.divide_numbers(&args.lhs, &args.rhs) {
                         Ok(value) => self.stack_push(value),
                         Err(VirtualMachineError::InvalidVariableType) => {
-                            self.runtime_error_message("Both operands must be numbers", chunk);
+                            self.runtime_error_message("Both operands must be numbers", &frame);
                             return Err(VirtualMachineError::InvalidVariableType);
                         }
                         Err(VirtualMachineError::DivideByZero) => {
-                            self.runtime_error_message("You cannot divide by 0", chunk);
+                            self.runtime_error_message("You cannot divide by 0", &frame);
                             return Err(VirtualMachineError::DivideByZero);
                         }
                         Err(_) => panic!("Shouldn't raise any other type of error"),
@@ -190,7 +223,7 @@ impl VirtualMachine {
                     match self.compare_greater(&args.lhs, &args.rhs) {
                         Ok(value) => self.stack_push(Value::new_bool(value)),
                         Err(VirtualMachineError::InvalidVariableType) => {
-                            self.runtime_error_message("Both operands must be numbers", chunk);
+                            self.runtime_error_message("Both operands must be numbers", &frame);
                             return Err(VirtualMachineError::InvalidVariableType);
                         }
                         Err(_) => panic!("Shouldn't raise any other type of error"),
@@ -201,7 +234,7 @@ impl VirtualMachine {
                     match self.compare_less(&args.lhs, &args.rhs) {
                         Ok(value) => self.stack_push(Value::new_bool(value)),
                         Err(VirtualMachineError::InvalidVariableType) => {
-                            self.runtime_error_message("Both operands must be numbers", chunk);
+                            self.runtime_error_message("Both operands must be numbers", &frame);
                             return Err(VirtualMachineError::InvalidVariableType);
                         }
                         Err(_) => panic!("Shouldn't raise any other type of error"),
@@ -215,7 +248,11 @@ impl VirtualMachine {
                     self.stack_pop()?;
                 }
                 OperationCode::DefineGlobal(global_var_index) => {
-                    let name = chunk.read_constant(global_var_index);
+                    let name = frame
+                        .function
+                        .borrow_mut()
+                        .chunk
+                        .read_constant(global_var_index);
                     match name.get_string_object() {
                         // Popping only after the value is added to globals is by design.
                         // It's done this way to ensue the VM can still find the value
@@ -229,7 +266,11 @@ impl VirtualMachine {
                     }
                 }
                 OperationCode::GetGlobal(global_var_index) => {
-                    let name = chunk.read_constant(global_var_index);
+                    let name = frame
+                        .function
+                        .borrow_mut()
+                        .chunk
+                        .read_constant(global_var_index);
                     let name_string_object = name
                         .get_string_object()
                         .map_err(|_| VirtualMachineError::InvalidVariableNameType)?;
@@ -241,14 +282,18 @@ impl VirtualMachine {
                                     "Undefined variable '{}'",
                                     name_string_object.borrow().get_value()
                                 ),
-                                chunk,
+                                &frame,
                             );
                             return Err(VirtualMachineError::UndefinedVariable);
                         }
                     }
                 }
                 OperationCode::SetGlobal(global_var_index) => {
-                    let name = chunk.read_constant(global_var_index);
+                    let name = frame
+                        .function
+                        .borrow_mut()
+                        .chunk
+                        .read_constant(global_var_index);
                     let name_string_object = name
                         .get_string_object()
                         .map_err(|_| VirtualMachineError::InvalidVariableNameType)?;
@@ -265,7 +310,7 @@ impl VirtualMachine {
                                     "Undefined variable '{}'.",
                                     name_string_object.borrow().get_value()
                                 ),
-                                chunk,
+                                &frame,
                             );
                             return Err(VirtualMachineError::UndefinedVariable);
                         }
@@ -275,10 +320,12 @@ impl VirtualMachine {
                 OperationCode::GetLocal(local_var_index) => {
                     // We must push it even though it's already on the stack as other instructions
                     // read data only from the top of the stack
-                    self.stack_push(self.stack[local_var_index as usize].clone());
+                    self.stack_push(
+                        self.stack[(frame.stack_start + local_var_index) as usize].clone(),
+                    );
                 }
                 OperationCode::SetLocal(local_var_index) => {
-                    self.stack[local_var_index as usize] = self.stack_peek(0).expect("Index of local var in the stack should be correct as the same index is used in compiler locals").clone();
+                    self.stack[(frame.stack_start + local_var_index) as usize] = self.stack_peek(0).expect("Index of local var in the stack should be correct as the same index is used in compiler locals").clone();
                 }
                 OperationCode::JumpIfFalse(bytes_to_skip) => {
                     if self
@@ -286,11 +333,11 @@ impl VirtualMachine {
                         .expect("Stack shouldn't be empty during conditional jump operation")
                         .is_falsey()
                     {
-                        self.instruction_pointer += bytes_to_skip as usize;
+                        frame.instruction_pointer += bytes_to_skip as usize;
                     }
                 }
                 OperationCode::Jump(bytes_to_skip) => {
-                    self.instruction_pointer += bytes_to_skip as usize;
+                    frame.instruction_pointer += bytes_to_skip as usize;
                 }
                 OperationCode::JumpIfTrue(bytes_to_skip) => {
                     if !self
@@ -298,11 +345,11 @@ impl VirtualMachine {
                         .expect("Stack shouldn't be empty during conditional jump operation")
                         .is_falsey()
                     {
-                        self.instruction_pointer += bytes_to_skip as usize;
+                        frame.instruction_pointer += bytes_to_skip as usize;
                     }
                 }
                 OperationCode::JumpBack(bytes_to_skip) => {
-                    self.instruction_pointer -= bytes_to_skip as usize;
+                    frame.instruction_pointer -= bytes_to_skip as usize;
                 }
             }
         }
@@ -332,10 +379,14 @@ impl VirtualMachine {
         Ok(&self.stack[index])
     }
 
-    fn runtime_error_message(&mut self, message: &str, chunk: &Chunk) {
+    fn runtime_error_message(&mut self, message: &str, frame: &CallFrame) {
         eprintln!("{}", message);
 
-        let line = chunk.read_line(self.instruction_pointer - 1);
+        let line = frame
+            .function
+            .borrow()
+            .chunk
+            .read_line(frame.instruction_pointer - 1);
         eprintln!("[line {}] in script", line);
         self.reset();
     }
