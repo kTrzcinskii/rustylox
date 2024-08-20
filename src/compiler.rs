@@ -16,6 +16,7 @@ struct Local {
     depth: i32,
 }
 
+#[derive(Clone, Copy)]
 pub enum FunctionType {
     Function, // Normal function
     Script,   // Top level function - whole global scope is put in here
@@ -715,6 +716,43 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.end_scope();
     }
 
+    fn handle_function_declaration(&mut self) {
+        let index = self.parse_variable("Expect function name.");
+        if self.current_scope_depth > 0 {
+            // We do it automatically because we allow function to use itself in its own initializer (needed for recursion)
+            self.mark_last_initialized();
+        }
+        self.handle_function(FunctionType::Function);
+        self.define_variable(index);
+    }
+
+    fn handle_function(&mut self, function_type: FunctionType) {
+        // TODO: finish logic here
+        let (enclosing_function, enclosing_function_type) =
+            (self.function.clone(), self.function_type);
+        let current_function =
+            FunctionObject::new_rc(self.get_lexeme_from_token(&self.parser.previous.unwrap()));
+        self.function = current_function;
+        self.function_type = function_type;
+
+        self.start_scope();
+
+        self.consume(TokenType::LeftParen, "Expect '(' after function name.");
+        self.consume(TokenType::RightParen, "Expect ')' after parameters.");
+        self.consume(TokenType::LeftBrace, "Expect '{' before function body.");
+
+        self.handle_block_statement();
+
+        self.end_scope();
+
+        let finished_function = self.function.clone();
+
+        self.function = enclosing_function;
+        self.function_type = enclosing_function_type;
+
+        self.emit_constant(Value::from(finished_function));
+    }
+
     fn parse_precendence(&mut self, precedence: Precedence) {
         self.advance();
         let can_assign = precedence as u8 <= Precedence::Assignment as u8;
@@ -858,7 +896,9 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn compile_declaration(&mut self) {
-        if self.match_current(&TokenType::Var) {
+        if self.match_current(&TokenType::Fun) {
+            self.handle_function_declaration();
+        } else if self.match_current(&TokenType::Var) {
             self.handle_var_declaration();
         } else {
             self.compile_statement();
