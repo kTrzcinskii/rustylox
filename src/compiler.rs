@@ -729,7 +729,6 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn handle_function(&mut self, function_type: FunctionType) {
-        // TODO: finish logic here
         let (enclosing_function, enclosing_function_type, enclosing_locals) = (
             self.function.clone(),
             self.function_type,
@@ -754,6 +753,27 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.start_scope();
 
         self.consume(TokenType::LeftParen, "Expect '(' after function name.");
+
+        // Consume function parameters
+        if !self.check_current(&TokenType::RightParen) {
+            // First parameter
+            self.function.borrow_mut().arity += 1;
+            let index = self.parse_variable("Expect parameter name");
+            self.define_variable(index);
+            // Other parameters
+            while self.match_current(&TokenType::Comma) {
+                self.function.borrow_mut().arity += 1;
+                if self.function.borrow_mut().arity > u8::MAX as usize {
+                    self.handle_error_at_token(
+                        &self.parser.current.unwrap(),
+                        "Can't have more than 255 parameters.",
+                    );
+                }
+                let index = self.parse_variable("Expect parameter name");
+                self.define_variable(index);
+            }
+        }
+
         self.consume(TokenType::RightParen, "Expect ')' after parameters.");
         self.consume(TokenType::LeftBrace, "Expect '{' before function body.");
 
