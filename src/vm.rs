@@ -23,6 +23,7 @@ pub enum VirtualMachineError {
     DivideByZero,
     InvalidVariableNameType,
     UndefinedVariable,
+    CallOnNotCallable,
 }
 
 struct CallFrame {
@@ -76,11 +77,8 @@ impl VirtualMachine {
         match compile_result {
             Ok(function) => {
                 self.stack_push(Value::from(function.clone()));
-                self.frames.push(CallFrame {
-                    function,
-                    instruction_pointer: 0,
-                    stack_start: (self.stack.len() - 1) as u8,
-                });
+                // Calling our implicit main which wraps the whole program
+                self.handle_function_call(function, 0);
                 let result = match self.run() {
                     Ok(_) => InterpretResult::Ok,
                     Err(_) => InterpretResult::RuntimeError,
@@ -351,6 +349,16 @@ impl VirtualMachine {
                 OperationCode::JumpBack(bytes_to_skip) => {
                     frame.instruction_pointer -= bytes_to_skip as usize;
                 }
+                OperationCode::Call(arguments_count) => {
+                    // We know that on the stack its always like:
+                    // <function> arg0 arg1 arg2 ...
+                    // So peeking arguments_count always gets us the function itself from the stack
+                    self.handle_call_value(
+                        self.stack_peek(arguments_count as usize)?.clone(),
+                        arguments_count,
+                    )?;
+                    frame = self.swap_call_frames_top(frame);
+                }
             }
         }
     }
@@ -474,6 +482,44 @@ impl VirtualMachine {
             .get_number()
             .map_err(|_| VirtualMachineError::InvalidVariableType)?;
         Ok(lhs < rhs)
+    }
+
+    // Logic here is that in current_frame we store currently executed frame
+    // When we call new function, we want to put current frame back on stack, and return the call frame of the new function
+    // We know that at the point of calling this, the frame is already on the stack (or at least should be)
+    fn swap_call_frames_top(&mut self, current_frame: CallFrame) -> CallFrame {
+        let top = self.frames.pop().unwrap();
+        self.frames.push(current_frame);
+        top
+    }
+
+    fn handle_call_value(
+        &mut self,
+        callee: Value,
+        arguments_count: u8,
+    ) -> Result<(), VirtualMachineError> {
+        match callee.get_type() {
+            ValueType::FunctionObject => {
+                self.handle_function_call(
+                    callee.get_function_object().unwrap().clone(),
+                    arguments_count,
+                );
+                Ok(())
+            }
+            _ => Err(VirtualMachineError::CallOnNotCallable),
+        }
+    }
+
+    fn handle_function_call(&mut self, function: Rc<RefCell<FunctionObject>>, arguments_count: u8) {
+        let function_frame = CallFrame {
+            function,
+            instruction_pointer: 0,
+            // We do it so that for frame it seems stack start at functions's position,
+            // as we have: <function <arg1> <arg2> ... <argN> <STACK_TOP>
+            // so from stack top we must substract (n + 1)
+            stack_start: self.stack.len() as u8 - (arguments_count + 1),
+        };
+        self.frames.push(function_frame);
     }
 }
 

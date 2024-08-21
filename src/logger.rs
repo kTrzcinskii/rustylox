@@ -151,6 +151,9 @@ impl Logger {
                         bytes_to_skip,
                     ))
                 }
+                OperationCode::Call(arguments_count) => {
+                    return Ok(Self::byte_instruction("OP_CALl", offset, arguments_count))
+                }
             }
         }
         Ok(0)

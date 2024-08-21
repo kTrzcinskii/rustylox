@@ -234,7 +234,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn call_infix_function(&mut self, token_type: &TokenType) -> Result<(), CompilerError> {
         match token_type {
-            TokenType::LeftParen => return Err(CompilerError::EmptyFunction),
+            TokenType::LeftParen => self.handle_call(),
             TokenType::RightParen => return Err(CompilerError::EmptyFunction),
             TokenType::LeftBrace => return Err(CompilerError::EmptyFunction),
             TokenType::RightBrace => return Err(CompilerError::EmptyFunction),
@@ -790,6 +790,35 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.emit_constant(Value::from(finished_function));
     }
 
+    fn handle_call(&mut self) {
+        let arguments_count = self.parse_argument_list();
+        self.emit_instruction(OperationCode::Call(arguments_count));
+    }
+
+    /// Returns number of parsed arguments
+    fn parse_argument_list(&mut self) -> u8 {
+        let mut count: usize = 0;
+        // Parse parameters
+        if !self.check_current(&TokenType::RightParen) {
+            // Parse first
+            self.compile_expression();
+            count += 1;
+            // Other
+            while self.match_current(&TokenType::Comma) {
+                self.compile_expression();
+                if count == u8::MAX as usize {
+                    self.handle_error_at_token(
+                        &self.parser.previous.unwrap(),
+                        "Can't have more than 255 arguments.",
+                    );
+                }
+                count += 1;
+            }
+        }
+        self.consume(TokenType::RightParen, "Expect ')' after arguments.");
+        count as u8
+    }
+
     fn parse_precendence(&mut self, precedence: Precedence) {
         self.advance();
         let can_assign = precedence as u8 <= Precedence::Assignment as u8;
@@ -1047,7 +1076,7 @@ impl TryFrom<u8> for Precedence {
 impl From<&TokenType> for Precedence {
     fn from(value: &TokenType) -> Self {
         match value {
-            TokenType::LeftParen => Precedence::None,
+            TokenType::LeftParen => Precedence::Call,
             TokenType::RightParen => Precedence::None,
             TokenType::LeftBrace => Precedence::None,
             TokenType::RightBrace => Precedence::None,

@@ -40,6 +40,8 @@ pub enum OperationCode {
     JumpIfTrue(u16),
     /// Jump back unconditionally, arguments: (number of bytes to skip)
     JumpBack(u16),
+    /// Call function/method, arguments: (number of call arguments)
+    Call(u8),
 }
 
 impl OperationCode {
@@ -70,6 +72,7 @@ impl OperationCode {
             OperationCode::Jump(_) => 3,
             OperationCode::JumpIfTrue(_) => 3,
             OperationCode::JumpBack(_) => 3,
+            OperationCode::Call(_) => 2,
         }
     }
 }
@@ -102,6 +105,7 @@ impl From<OperationCode> for u8 {
             OperationCode::Jump(_) => 22,
             OperationCode::JumpIfTrue(_) => 23,
             OperationCode::JumpBack(_) => 24,
+            OperationCode::Call(_) => 25,
         }
     }
 }
@@ -175,6 +179,12 @@ impl From<OperationCode> for Vec<u8> {
                     u8::from(OperationCode::JumpBack(bytes_to_skip)),
                     number_in_bytes[0],
                     number_in_bytes[1],
+                ]
+            }
+            OperationCode::Call(arguments_count) => {
+                vec![
+                    u8::from(OperationCode::Call(arguments_count)),
+                    arguments_count,
                 ]
             }
         }
@@ -306,6 +316,14 @@ impl TryFrom<&[u8]> for OperationCode {
                 }
                 let bytes_to_skip = u16::from_ne_bytes([value[1], value[2]]);
                 Ok(OperationCode::JumpBack(bytes_to_skip))
+            }
+            25 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::Call(u8::MAX))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::Call(value[1]))
             }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
