@@ -78,12 +78,13 @@ impl VirtualMachine {
             Ok(function) => {
                 self.stack_push(Value::from(function.clone()));
                 // Calling our implicit main which wraps the whole program
-                self.handle_function_call(function, 0);
+                self.handle_function_call(function, 0, None);
                 let result = match self.run() {
                     Ok(_) => InterpretResult::Ok,
                     Err(_) => InterpretResult::RuntimeError,
                 };
                 // TODO: after implementing whole function logic check if this makes sense
+                // FIXME: in case of error this sometimes break, as stack is not in correct form?? figure out what the best way of handling this is
                 self.stack_pop().expect("Should remove first element - the global script function - to leave stack empty for future repl interpreting");
                 result
             }
@@ -356,6 +357,7 @@ impl VirtualMachine {
                     self.handle_call_value(
                         self.stack_peek(arguments_count as usize)?.clone(),
                         arguments_count,
+                        &frame,
                     )?;
                     frame = self.swap_call_frames_top(frame);
                 }
@@ -497,12 +499,14 @@ impl VirtualMachine {
         &mut self,
         callee: Value,
         arguments_count: u8,
+        frame: &CallFrame,
     ) -> Result<(), VirtualMachineError> {
         match callee.get_type() {
             ValueType::FunctionObject => {
                 self.handle_function_call(
                     callee.get_function_object().unwrap().clone(),
                     arguments_count,
+                    Some(frame),
                 );
                 Ok(())
             }
@@ -510,7 +514,22 @@ impl VirtualMachine {
         }
     }
 
-    fn handle_function_call(&mut self, function: Rc<RefCell<FunctionObject>>, arguments_count: u8) {
+    fn handle_function_call(
+        &mut self,
+        function: Rc<RefCell<FunctionObject>>,
+        arguments_count: u8,
+        frame: Option<&CallFrame>,
+    ) {
+        if arguments_count != function.borrow().arity as u8 {
+            self.runtime_error_message(
+                &format!(
+                    "Expected {} arguments, but got {}",
+                    function.borrow().arity,
+                    arguments_count
+                ),
+                frame.expect("This should be none only when call from interpret, when we don't pass any arguments and arity is 0, so this line should never be called if it's empty"),
+            )
+        }
         let function_frame = CallFrame {
             function,
             instruction_pointer: 0,
