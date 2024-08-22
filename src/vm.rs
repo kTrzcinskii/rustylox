@@ -24,6 +24,7 @@ pub enum VirtualMachineError {
     InvalidVariableNameType,
     UndefinedVariable,
     CallOnNotCallable,
+    InvalidArgumentsCount,
 }
 
 struct CallFrame {
@@ -78,15 +79,16 @@ impl VirtualMachine {
             Ok(function) => {
                 self.stack_push(Value::from(function.clone()));
                 // Calling our implicit main which wraps the whole program
-                self.handle_function_call(function, 0, None);
-                let result = match self.run() {
-                    Ok(_) => InterpretResult::Ok,
+                self.handle_function_call(function, 0, None)
+                    .expect("Should never fail, as fail can only be by invalid arguments count");
+                match self.run() {
+                    Ok(_) => {
+                        // We do it only here, because on error we are clearing the stack
+                        self.stack_pop().expect("Should remove first element - the global script function - to leave stack empty for future repl interpreting");
+                        InterpretResult::Ok
+                    }
                     Err(_) => InterpretResult::RuntimeError,
-                };
-                // TODO: after implementing whole function logic check if this makes sense
-                // FIXME: in case of error this sometimes break, as stack is not in correct form?? figure out what the best way of handling this is
-                self.stack_pop().expect("Should remove first element - the global script function - to leave stack empty for future repl interpreting");
-                result
+                }
             }
             Err(_) => InterpretResult::CompileError,
         }
@@ -507,7 +509,7 @@ impl VirtualMachine {
                     callee.get_function_object().unwrap().clone(),
                     arguments_count,
                     Some(frame),
-                );
+                )?;
                 Ok(())
             }
             _ => Err(VirtualMachineError::CallOnNotCallable),
@@ -519,7 +521,7 @@ impl VirtualMachine {
         function: Rc<RefCell<FunctionObject>>,
         arguments_count: u8,
         frame: Option<&CallFrame>,
-    ) {
+    ) -> Result<(), VirtualMachineError> {
         if arguments_count != function.borrow().arity as u8 {
             self.runtime_error_message(
                 &format!(
@@ -528,7 +530,8 @@ impl VirtualMachine {
                     arguments_count
                 ),
                 frame.expect("This should be none only when call from interpret, when we don't pass any arguments and arity is 0, so this line should never be called if it's empty"),
-            )
+            );
+            return Err(VirtualMachineError::InvalidArgumentsCount);
         }
         let function_frame = CallFrame {
             function,
@@ -539,6 +542,7 @@ impl VirtualMachine {
             stack_start: self.stack.len() as u8 - (arguments_count + 1),
         };
         self.frames.push(function_frame);
+        Ok(())
     }
 }
 
