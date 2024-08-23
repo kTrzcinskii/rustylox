@@ -16,7 +16,7 @@ struct Local {
     depth: i32,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum FunctionType {
     Function, // Normal function
     Script,   // Top level function - whole global scope is put in here
@@ -381,6 +381,12 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.emit_instruction(second);
     }
 
+    fn emit_return_instruction(&mut self) {
+        // Implicitly returning nil
+        self.emit_constant(Value::new_nil());
+        self.emit_instruction(OperationCode::Return);
+    }
+
     fn emit_constant(&mut self, constant: Value) {
         let index = self.make_constant(constant);
         if index as u8 > u8::MAX {
@@ -419,7 +425,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn end_compiler(&mut self) {
-        self.emit_instruction(OperationCode::Return);
+        self.emit_return_instruction();
     }
 
     fn handle_number(&mut self) {
@@ -718,6 +724,25 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.end_scope();
     }
 
+    fn handle_return_statement(&mut self) {
+        if self.function_type == FunctionType::Script {
+            self.handle_error_at_token(
+                &self.parser.previous.unwrap(),
+                "Cannot return from top level script.",
+            );
+            return;
+        }
+
+        if self.match_current(&TokenType::Semicolon) {
+            self.emit_return_instruction();
+            return;
+        }
+
+        self.compile_expression();
+        self.consume(TokenType::Semicolon, "Expect ';' after return value.");
+        self.emit_instruction(OperationCode::Return);
+    }
+
     fn handle_function_declaration(&mut self) {
         let index = self.parse_variable("Expect function name.");
         if self.current_scope_depth > 0 {
@@ -780,6 +805,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.handle_block_statement();
 
         self.end_scope();
+
+        self.emit_return_instruction();
 
         let finished_function = self.function.clone();
 
@@ -984,6 +1011,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
             self.handle_for_statement();
         } else if self.match_current(&TokenType::If) {
             self.handle_if_statement();
+        } else if self.match_current(&TokenType::Return) {
+            self.handle_return_statement();
         } else if self.match_current(&TokenType::While) {
             self.handle_while_statement();
         } else if self.match_current(&TokenType::LeftBrace) {

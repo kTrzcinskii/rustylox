@@ -82,11 +82,7 @@ impl VirtualMachine {
                 self.handle_function_call(function, 0, None)
                     .expect("Should never fail, as fail can only be by invalid arguments count");
                 match self.run() {
-                    Ok(_) => {
-                        // We do it only here, because on error we are clearing the stack
-                        self.stack_pop().expect("Should remove first element - the global script function - to leave stack empty for future repl interpreting");
-                        InterpretResult::Ok
-                    }
+                    Ok(_) => InterpretResult::Ok,
                     Err(_) => InterpretResult::RuntimeError,
                 }
             }
@@ -95,7 +91,6 @@ impl VirtualMachine {
     }
 
     fn run(&mut self) -> Result<InterpretResult, VirtualMachineError> {
-        // TODO: properly wire it up with the rest call frames logic in the future
         let mut frame = self.frames.pop().expect("Shouldn't be empty.");
         loop {
             Logger::show_stack_content(&self.stack);
@@ -114,7 +109,20 @@ impl VirtualMachine {
             frame.instruction_pointer += OperationCode::get_instruction_bytes_length(&instruction);
             match instruction {
                 OperationCode::Return => {
-                    return Ok(InterpretResult::Ok);
+                    let result = self.stack_pop().expect(
+                        "When returning from function there should be result value on the stack",
+                    );
+                    // We executed all the frames (including the "implicit" main one) - it's time to finish
+                    if self.frames.is_empty() {
+                        self.stack_pop().expect("When finish program there should be the global script on the stack that must be removed");
+                        return Ok(InterpretResult::Ok);
+                    }
+                    // Remove function arguments + function itself from the stack
+                    self.stack
+                        .truncate(self.stack.len() - (frame.function.borrow().arity + 1));
+                    frame = self.frames.pop().expect("Shouldn't be empty");
+                    // Push result back on stack to make it available for outter function
+                    self.stack_push(result);
                 }
                 OperationCode::Constant(constant_index) => {
                     let value = frame
