@@ -60,7 +60,7 @@ impl StringObject {
 pub struct FunctionObject {
     pub arity: usize,
     pub chunk: Chunk,
-    name: Rc<RefCell<StringObject>>,
+    pub name: Rc<RefCell<StringObject>>,
 }
 
 impl FunctionObject {

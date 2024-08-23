@@ -394,12 +394,28 @@ impl VirtualMachine {
     fn runtime_error_message(&mut self, message: &str, frame: &CallFrame) {
         eprintln!("{}", message);
 
-        let line = frame
-            .function
-            .borrow()
+        // Print current function
+        let inner_most_function = frame.function.borrow();
+        let inner_most_line = inner_most_function
             .chunk
             .read_line(frame.instruction_pointer - 1);
-        eprintln!("[line {}] in script", line);
+        let inner_most_name = inner_most_function.name.borrow();
+        eprintln!(
+            "[line {}] in {}",
+            inner_most_line,
+            inner_most_name.get_value()
+        );
+
+        // Print the call stack
+        for frame in self.frames.iter().rev() {
+            // -1 becuase the current instruction_pointer points to the next instruction to be executed
+            let last_executed_instruction = frame.instruction_pointer - 1;
+            let current_function = frame.function.borrow();
+            let current_line = current_function.chunk.read_line(last_executed_instruction);
+            let current_name = current_function.name.borrow();
+            eprintln!("[line {}] in {}", current_line, current_name.get_value());
+        }
+
         self.reset();
     }
 
