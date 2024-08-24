@@ -29,9 +29,8 @@ pub struct Compiler<'a, 'b> {
     function: Rc<RefCell<FunctionObject>>,
     function_type: FunctionType,
     intern_strings: Option<&'b mut Table>,
-    // It's option only because of the way we are handling function
-    // handle function is the only place where it can be None, so we don't mind all those `unwrap`` everywhere
-    locals: Option<Vec<Local>>,
+    // We store it like this to have all locals in every function in nested function chain
+    locals: Vec<Vec<Local>>,
     current_scope_depth: i32,
 }
 
@@ -73,7 +72,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             function: FunctionObject::new_rc("GLOBAL_SCRIPT"),
             function_type,
             intern_strings: None,
-            locals: Some(locals),
+            locals: vec![locals],
             current_scope_depth: 0,
         }
     }
@@ -754,11 +753,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn handle_function(&mut self, function_type: FunctionType) {
-        let (enclosing_function, enclosing_function_type, enclosing_locals) = (
-            self.function.clone(),
-            self.function_type,
-            self.locals.take().unwrap(),
-        );
+        let (enclosing_function, enclosing_function_type) =
+            (self.function.clone(), self.function_type);
         let current_function =
             FunctionObject::new_rc(self.get_lexeme_from_token(&self.parser.previous.unwrap()));
         let current_locals = vec![Local {
@@ -773,7 +769,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.function = current_function;
         self.function_type = function_type;
-        self.locals = Some(current_locals);
+        self.locals.push(current_locals);
 
         self.start_scope();
 
@@ -812,7 +808,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.function = enclosing_function;
         self.function_type = enclosing_function_type;
-        self.locals = Some(enclosing_locals);
+        self.locals.pop();
 
         let function_index = self.make_constant(Value::from(finished_function));
         self.emit_instruction(OperationCode::Closure(function_index as u8));
@@ -913,7 +909,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         // Check if variable is already defined
         let mut is_already_defined = false;
         // We iterate from the back, becasue we only need to check current scope
-        for local in self.locals.as_ref().unwrap().iter().rev() {
+        for local in self.locals.last().unwrap().iter().rev() {
             // If we are in the outter scope we don't have to check the rest
             if local.depth != -1 && local.depth < self.current_scope_depth {
                 break;
@@ -935,21 +931,21 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn add_local_variable(&mut self, name: Token) {
         // We use one-byte index in our vm, so we cannot have more than u8::MAX + 1
-        if self.locals.as_ref().unwrap().len() == u8::MAX as usize + 1 {
+        if self.locals.last().unwrap().len() == u8::MAX as usize + 1 {
             self.handle_error_at_token(
                 &self.parser.previous.unwrap(),
                 "Too many local variables in scope.",
             );
         }
 
-        self.locals.as_mut().unwrap().push(Local {
+        self.locals.last_mut().unwrap().push(Local {
             name,
             depth: UNINITIALIZED_DEPTH,
         });
     }
 
     fn resolve_local_variable(&self, name: &Token) -> Result<u8, LocalVariableError> {
-        for (index, local) in self.locals.as_ref().unwrap().iter().enumerate().rev() {
+        for (index, local) in self.locals.last().unwrap().iter().enumerate().rev() {
             if self.are_identifiers_equal(&local.name, name) {
                 if local.depth == UNINITIALIZED_DEPTH {
                     return Err(LocalVariableError::UsedInOwnInitializer);
@@ -963,7 +959,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn mark_last_initialized(&mut self) {
         self.locals
-            .as_mut()
+            .last_mut()
             .unwrap()
             .last_mut()
             .expect("Last local shouldn't be empty when marking as initialized.")
@@ -978,11 +974,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.current_scope_depth -= 1;
 
         // Remove variable which were in the scope that was just ended from the stack
-        while let Some(local) = self.locals.as_ref().unwrap().last() {
+        while let Some(local) = self.locals.last().unwrap().last() {
             if local.depth <= self.current_scope_depth {
                 break;
             }
-            self.locals.as_mut().unwrap().pop();
+            self.locals.last_mut().unwrap().pop();
             self.emit_instruction(OperationCode::PopStack);
         }
     }
