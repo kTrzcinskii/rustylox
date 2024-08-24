@@ -814,7 +814,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.function_type = enclosing_function_type;
         self.locals = Some(enclosing_locals);
 
-        self.emit_constant(Value::from(finished_function));
+        let function_index = self.make_constant(Value::from(finished_function));
+        self.emit_instruction(OperationCode::Closure(function_index as u8));
     }
 
     fn handle_call(&mut self) {

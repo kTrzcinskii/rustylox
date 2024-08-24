@@ -154,6 +154,9 @@ impl Logger {
                 OperationCode::Call(arguments_count) => {
                     return Ok(Self::byte_instruction("OP_CALl", offset, arguments_count))
                 }
+                OperationCode::Closure(function_index) => {
+                    return Ok(Self::byte_instruction("OP_CLOSURE", offset, function_index))
+                }
             }
         }
         Ok(0)

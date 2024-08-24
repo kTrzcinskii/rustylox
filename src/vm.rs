@@ -6,7 +6,7 @@ use crate::{
     logger::Logger,
     native_functions,
     table::{InsertResult, Table},
-    value::{FunctionObject, NativeFunction, StringObject, Value, ValueType},
+    value::{ClosureObject, NativeFunction, StringObject, Value, ValueType},
 };
 
 pub enum InterpretResult {
@@ -29,8 +29,8 @@ pub enum VirtualMachineError {
 }
 
 struct CallFrame {
-    /// Function that was called
-    function: Rc<RefCell<FunctionObject>>,
+    /// Closure that was called
+    closure: Rc<RefCell<ClosureObject>>,
     /// Index of next to execute instruction in function chunk
     instruction_pointer: usize,
     /// Index of stack where frame local variables start
@@ -82,9 +82,13 @@ impl VirtualMachine {
         let compile_result = compiler.compile(&mut self.strings);
         match compile_result {
             Ok(function) => {
+                // Pushing on the stack for GC reasons
                 self.stack_push(Value::from(function.clone()));
+                let main_closure = ClosureObject::new_rc(function);
+                self.stack_pop().unwrap();
+                self.stack_push(Value::from(main_closure.clone()));
                 // Calling our implicit main which wraps the whole program
-                self.handle_function_call(function, 0, None)
+                self.handle_function_call(main_closure, 0, None)
                     .expect("Should never fail, as fail can only be by invalid arguments count");
                 match self.run() {
                     Ok(_) => InterpretResult::Ok,
@@ -100,12 +104,14 @@ impl VirtualMachine {
         loop {
             Logger::show_stack_content(&self.stack);
             Logger::disassemble_instruction(
-                &frame.function.borrow().chunk,
+                &frame.closure.borrow().function.borrow().chunk,
                 frame.instruction_pointer,
             )
             .unwrap();
 
             let instruction = frame
+                .closure
+                .borrow_mut()
                 .function
                 .borrow_mut()
                 .chunk
@@ -123,14 +129,17 @@ impl VirtualMachine {
                         return Ok(InterpretResult::Ok);
                     }
                     // Remove function arguments + function itself from the stack
-                    self.stack
-                        .truncate(self.stack.len() - (frame.function.borrow().arity + 1));
+                    self.stack.truncate(
+                        self.stack.len() - (frame.closure.borrow().function.borrow().arity + 1),
+                    );
                     frame = self.frames.pop().expect("Shouldn't be empty");
                     // Push result back on stack to make it available for outter function
                     self.stack_push(result);
                 }
                 OperationCode::Constant(constant_index) => {
                     let value = frame
+                        .closure
+                        .borrow_mut()
                         .function
                         .borrow_mut()
                         .chunk
@@ -263,6 +272,8 @@ impl VirtualMachine {
                 }
                 OperationCode::DefineGlobal(global_var_index) => {
                     let name = frame
+                        .closure
+                        .borrow_mut()
                         .function
                         .borrow_mut()
                         .chunk
@@ -281,6 +292,8 @@ impl VirtualMachine {
                 }
                 OperationCode::GetGlobal(global_var_index) => {
                     let name = frame
+                        .closure
+                        .borrow_mut()
                         .function
                         .borrow_mut()
                         .chunk
@@ -304,6 +317,8 @@ impl VirtualMachine {
                 }
                 OperationCode::SetGlobal(global_var_index) => {
                     let name = frame
+                        .closure
+                        .borrow_mut()
                         .function
                         .borrow_mut()
                         .chunk
@@ -377,6 +392,20 @@ impl VirtualMachine {
                         frame = self.swap_call_frames_top(frame);
                     }
                 }
+                OperationCode::Closure(function_index) => {
+                    let function = frame
+                        .closure
+                        .borrow_mut()
+                        .function
+                        .borrow_mut()
+                        .chunk
+                        .read_constant(function_index)
+                        .get_function_object()
+                        .expect("Closure operation should store index to function")
+                        .clone();
+                    let closure = Value::new_closure_object(function);
+                    self.stack_push(closure);
+                }
             }
         }
     }
@@ -409,7 +438,8 @@ impl VirtualMachine {
         eprintln!("{}", message);
 
         // Print current function
-        let inner_most_function = frame.function.borrow();
+        let inner_most_closure = frame.closure.borrow();
+        let inner_most_function = inner_most_closure.function.borrow();
         let inner_most_line = inner_most_function
             .chunk
             .read_line(frame.instruction_pointer - 1);
@@ -424,7 +454,8 @@ impl VirtualMachine {
         for frame in self.frames.iter().rev() {
             // -1 becuase the current instruction_pointer points to the next instruction to be executed
             let last_executed_instruction = frame.instruction_pointer - 1;
-            let current_function = frame.function.borrow();
+            let current_closure = frame.closure.borrow();
+            let current_function = current_closure.function.borrow();
             let current_line = current_function.chunk.read_line(last_executed_instruction);
             let current_name = current_function.name.borrow();
             eprintln!("[line {}] in {}", current_line, current_name.get_value());
@@ -534,9 +565,9 @@ impl VirtualMachine {
         frame: &CallFrame,
     ) -> Result<(), VirtualMachineError> {
         match callee.get_type() {
-            ValueType::FunctionObject => {
+            ValueType::ClosureObject => {
                 self.handle_function_call(
-                    callee.get_function_object().unwrap().clone(),
+                    callee.get_closure_object().unwrap().clone(),
                     arguments_count,
                     Some(frame),
                 )?;
@@ -555,30 +586,30 @@ impl VirtualMachine {
 
     fn handle_function_call(
         &mut self,
-        function: Rc<RefCell<FunctionObject>>,
+        closure: Rc<RefCell<ClosureObject>>,
         arguments_count: u8,
         frame: Option<&CallFrame>,
     ) -> Result<(), VirtualMachineError> {
-        if arguments_count != function.borrow().arity as u8 {
+        if arguments_count != closure.borrow().function.borrow().arity as u8 {
             self.runtime_error_message(
                 &format!(
                     "Expected {} arguments, but got {}",
-                    function.borrow().arity,
+                    closure.borrow().function.borrow().arity,
                     arguments_count
                 ),
                 frame.expect("This should be none only when call from interpret, when we don't pass any arguments and arity is 0, so this line should never be called if it's empty"),
             );
             return Err(VirtualMachineError::InvalidArgumentsCount);
         }
-        let function_frame = CallFrame {
-            function,
+        let call_frame = CallFrame {
+            closure,
             instruction_pointer: 0,
             // We do it so that for frame it seems stack start at functions's position,
             // as we have: <function <arg1> <arg2> ... <argN> <STACK_TOP>
             // so from stack top we must substract (n + 1)
             stack_start: self.stack.len() as u8 - (arguments_count + 1),
         };
-        self.frames.push(function_frame);
+        self.frames.push(call_frame);
         Ok(())
     }
 

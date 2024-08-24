@@ -42,6 +42,8 @@ pub enum OperationCode {
     JumpBack(u16),
     /// Call function/method, arguments: (number of call arguments)
     Call(u8),
+    /// Create closure from function, arguments: (function index in `ValueContainer`)
+    Closure(u8),
 }
 
 impl OperationCode {
@@ -73,6 +75,7 @@ impl OperationCode {
             OperationCode::JumpIfTrue(_) => 3,
             OperationCode::JumpBack(_) => 3,
             OperationCode::Call(_) => 2,
+            OperationCode::Closure(_) => 2,
         }
     }
 }
@@ -106,6 +109,7 @@ impl From<OperationCode> for u8 {
             OperationCode::JumpIfTrue(_) => 23,
             OperationCode::JumpBack(_) => 24,
             OperationCode::Call(_) => 25,
+            OperationCode::Closure(_) => 26,
         }
     }
 }
@@ -185,6 +189,12 @@ impl From<OperationCode> for Vec<u8> {
                 vec![
                     u8::from(OperationCode::Call(arguments_count)),
                     arguments_count,
+                ]
+            }
+            OperationCode::Closure(function_index) => {
+                vec![
+                    u8::from(OperationCode::Closure(function_index)),
+                    function_index,
                 ]
             }
         }
@@ -324,6 +334,14 @@ impl TryFrom<&[u8]> for OperationCode {
                     return Err(OperationCodeConversionError::InvalidFormat);
                 }
                 Ok(OperationCode::Call(value[1]))
+            }
+            26 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::Closure(u8::MAX))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::Closure(value[2]))
             }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }

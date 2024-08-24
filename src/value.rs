@@ -11,6 +11,7 @@ pub enum ValueType {
     StringObject,
     FunctionObject,
     NativeFunction,
+    ClosureObject,
 }
 
 #[derive(Clone)]
@@ -102,6 +103,42 @@ impl From<Rc<RefCell<FunctionObject>>> for Value {
 
 pub type NativeFunction = fn(&[Value]) -> Value;
 
+pub struct ClosureObject {
+    pub function: Rc<RefCell<FunctionObject>>,
+}
+
+impl ClosureObject {
+    pub fn new(function: Rc<RefCell<FunctionObject>>) -> Self {
+        ClosureObject { function }
+    }
+
+    fn transform_to_rc(self) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(self))
+    }
+
+    pub fn new_rc(function: Rc<RefCell<FunctionObject>>) -> Rc<RefCell<Self>> {
+        Self::new(function).transform_to_rc()
+    }
+
+    pub fn are_equal_rc(
+        lhs: &Rc<RefCell<ClosureObject>>,
+        rhs: &Rc<RefCell<ClosureObject>>,
+    ) -> bool {
+        Rc::ptr_eq(lhs, rhs)
+    }
+}
+
+impl From<Rc<RefCell<ClosureObject>>> for Value {
+    fn from(value: Rc<RefCell<ClosureObject>>) -> Self {
+        Value {
+            value_type: ValueType::ClosureObject,
+            actual_value: UnderlyingValue {
+                closure_object: ManuallyDrop::new(value),
+            },
+        }
+    }
+}
+
 #[repr(C)]
 union UnderlyingValue {
     boolean: bool,
@@ -109,6 +146,7 @@ union UnderlyingValue {
     string_object: ManuallyDrop<Rc<RefCell<StringObject>>>,
     function_object: ManuallyDrop<Rc<RefCell<FunctionObject>>>,
     native_function: NativeFunction,
+    closure_object: ManuallyDrop<Rc<RefCell<ClosureObject>>>,
 }
 
 pub struct Value {
@@ -240,6 +278,28 @@ impl Value {
         }
     }
 
+    pub fn new_closure_object(function: Rc<RefCell<FunctionObject>>) -> Value {
+        Value {
+            value_type: ValueType::NativeFunction,
+            actual_value: UnderlyingValue {
+                closure_object: ManuallyDrop::new(ClosureObject::new_rc(function)),
+            },
+        }
+    }
+
+    pub fn is_closure_object(&self) -> bool {
+        self.value_type == ValueType::ClosureObject
+    }
+
+    pub fn get_closure_object(
+        &self,
+    ) -> Result<&Rc<RefCell<ClosureObject>>, ValueInterpretingError> {
+        match self.value_type {
+            ValueType::ClosureObject => unsafe { Ok(&self.actual_value.closure_object) },
+            _ => Err(ValueInterpretingError {}),
+        }
+    }
+
     pub fn get_type(&self) -> ValueType {
         self.value_type
     }
@@ -248,10 +308,7 @@ impl Value {
         match self.value_type {
             ValueType::Bool => !self.get_bool().expect("Bool type should contain bool"),
             ValueType::Nil => true,
-            ValueType::Number => false,
-            ValueType::StringObject => false,
-            ValueType::FunctionObject => false,
-            ValueType::NativeFunction => false,
+            _ => false,
         }
     }
 
@@ -289,6 +346,12 @@ impl Value {
                         .get_native_function()
                         .expect("NativeFunction type should contain native function")
             }
+            ValueType::ClosureObject => ClosureObject::are_equal_rc(
+                lhs.get_closure_object()
+                    .expect("ClosureObject type should contain closure object"),
+                rhs.get_closure_object()
+                    .expect("ClosureObject type should contain closure object"),
+            ),
         }
     }
 }
@@ -324,6 +387,13 @@ impl Clone for Value {
                     .get_native_function()
                     .expect("NativeFunction type should contain native function"),
             },
+            ValueType::ClosureObject => UnderlyingValue {
+                closure_object: ManuallyDrop::new(
+                    self.get_closure_object()
+                        .expect("ClosureObject type should contain closure object")
+                        .clone(),
+                ),
+            },
         };
         Self {
             value_type: self.value_type,
@@ -338,6 +408,8 @@ impl Drop for Value {
             unsafe { ManuallyDrop::drop(&mut self.actual_value.string_object) }
         } else if self.is_function_object() {
             unsafe { ManuallyDrop::drop(&mut self.actual_value.function_object) }
+        } else if self.is_closure_object() {
+            unsafe { ManuallyDrop::drop(&mut self.actual_value.closure_object) }
         }
     }
 }
@@ -369,13 +441,25 @@ impl fmt::Display for Value {
                 f,
                 "<fn {}>",
                 self.get_function_object()
-                    .expect("FunctionObject type should containt Function Object")
+                    .expect("FunctionObject type should contain Function Object")
                     .borrow()
                     .name
                     .borrow()
                     .get_value()
             ),
             ValueType::NativeFunction => write!(f, "<native function>"),
+            ValueType::ClosureObject => write!(
+                f,
+                "<fn {}>",
+                self.get_closure_object()
+                    .expect("ClosureObject type should contain closure object")
+                    .borrow()
+                    .function
+                    .borrow()
+                    .name
+                    .borrow()
+                    .get_value()
+            ),
         }
     }
 }
