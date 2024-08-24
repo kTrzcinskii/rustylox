@@ -10,6 +10,7 @@ pub enum ValueType {
     Number,
     StringObject,
     FunctionObject,
+    NativeFunction,
 }
 
 #[derive(Clone)]
@@ -99,12 +100,15 @@ impl From<Rc<RefCell<FunctionObject>>> for Value {
     }
 }
 
+pub type NativeFunction = fn(&[Value]) -> Value;
+
 #[repr(C)]
 union UnderlyingValue {
     boolean: bool,
     number: f64,
     string_object: ManuallyDrop<Rc<RefCell<StringObject>>>,
     function_object: ManuallyDrop<Rc<RefCell<FunctionObject>>>,
+    native_function: NativeFunction,
 }
 
 pub struct Value {
@@ -216,6 +220,26 @@ impl Value {
         }
     }
 
+    pub fn new_native_function(function: NativeFunction) -> Value {
+        Value {
+            value_type: ValueType::NativeFunction,
+            actual_value: UnderlyingValue {
+                native_function: function,
+            },
+        }
+    }
+
+    pub fn is_native_function(&self) -> bool {
+        self.value_type == ValueType::NativeFunction
+    }
+
+    pub fn get_native_function(&self) -> Result<NativeFunction, ValueInterpretingError> {
+        match self.value_type {
+            ValueType::NativeFunction => unsafe { Ok(self.actual_value.native_function) },
+            _ => Err(ValueInterpretingError {}),
+        }
+    }
+
     pub fn get_type(&self) -> ValueType {
         self.value_type
     }
@@ -227,6 +251,7 @@ impl Value {
             ValueType::Number => false,
             ValueType::StringObject => false,
             ValueType::FunctionObject => false,
+            ValueType::NativeFunction => false,
         }
     }
 
@@ -250,7 +275,20 @@ impl Value {
                 rhs.get_string_object()
                     .expect("StringObject type should contain String Object"),
             ),
-            ValueType::FunctionObject => todo!(),
+            ValueType::FunctionObject => FunctionObject::are_equal_rc(
+                lhs.get_function_object()
+                    .expect("FunctionObject type should contain function object"),
+                rhs.get_function_object()
+                    .expect("FunctionObject type should contain function object"),
+            ),
+            ValueType::NativeFunction => {
+                // We are comparing function pointers here
+                lhs.get_native_function()
+                    .expect("NativeFunction type should contain native function")
+                    == rhs
+                        .get_native_function()
+                        .expect("NativeFunction type should contain native function")
+            }
         }
     }
 }
@@ -280,6 +318,11 @@ impl Clone for Value {
                         .expect("FunctionObject type should containt Function Object")
                         .clone(),
                 ),
+            },
+            ValueType::NativeFunction => UnderlyingValue {
+                native_function: self
+                    .get_native_function()
+                    .expect("NativeFunction type should contain native function"),
             },
         };
         Self {
@@ -332,6 +375,7 @@ impl fmt::Display for Value {
                     .borrow()
                     .get_value()
             ),
+            ValueType::NativeFunction => write!(f, "<native function>"),
         }
     }
 }

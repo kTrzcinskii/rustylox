@@ -4,8 +4,9 @@ use crate::{
     chunk::{OperationCode, OperationCodeConversionError},
     compiler::{Compiler, FunctionType},
     logger::Logger,
+    native_functions,
     table::{InsertResult, Table},
-    value::{FunctionObject, StringObject, Value, ValueType},
+    value::{FunctionObject, NativeFunction, StringObject, Value, ValueType},
 };
 
 pub enum InterpretResult {
@@ -56,12 +57,16 @@ impl VirtualMachine {
     const INITIAL_STACK_SIZE: usize = 8;
 
     pub fn new() -> Self {
-        VirtualMachine {
+        let mut vm = VirtualMachine {
             frames: Vec::with_capacity(Self::INITIAL_STACK_SIZE),
             stack: Vec::with_capacity(Self::INITIAL_STACK_SIZE),
             strings: Table::new(),
             globals: Table::new(),
-        }
+        };
+
+        vm.define_native_function("clock", native_functions::clock_native);
+
+        vm
     }
 
     pub fn reset(&mut self) {
@@ -364,12 +369,13 @@ impl VirtualMachine {
                     // We know that on the stack its always like:
                     // <function> arg0 arg1 arg2 ...
                     // So peeking arguments_count always gets us the function itself from the stack
-                    self.handle_call_value(
-                        self.stack_peek(arguments_count as usize)?.clone(),
-                        arguments_count,
-                        &frame,
-                    )?;
-                    frame = self.swap_call_frames_top(frame);
+                    let callee = self.stack_peek(arguments_count as usize)?.clone();
+                    // We don't use frames with native functions, as we let rust handle them
+                    let should_swap_frames = callee.get_type() != ValueType::NativeFunction;
+                    self.handle_call_value(callee, arguments_count, &frame)?;
+                    if should_swap_frames {
+                        frame = self.swap_call_frames_top(frame);
+                    }
                 }
             }
         }
@@ -536,6 +542,13 @@ impl VirtualMachine {
                 )?;
                 Ok(())
             }
+            ValueType::NativeFunction => {
+                self.handle_native_function_call(
+                    callee.get_native_function().unwrap(),
+                    arguments_count,
+                );
+                Ok(())
+            }
             _ => Err(VirtualMachineError::CallOnNotCallable),
         }
     }
@@ -567,6 +580,43 @@ impl VirtualMachine {
         };
         self.frames.push(function_frame);
         Ok(())
+    }
+
+    fn handle_native_function_call(
+        &mut self,
+        native_function: NativeFunction,
+        arguments_count: u8,
+    ) {
+        let arguments_start = self.stack.len() - arguments_count as usize;
+        let arguments_end = self.stack.len();
+        let arguments = &self.stack[arguments_start..arguments_end];
+        // Call native function
+        let result = native_function(arguments);
+        // Remove native function arguments + native function itself from the stack
+        self.stack
+            .truncate(self.stack.len() - (arguments_count + 1) as usize);
+        // Put result back on the stack
+        self.stack_push(result);
+    }
+
+    // It only makes sense to use this function before program starts executing
+    fn define_native_function(&mut self, name: &str, native_function: NativeFunction) {
+        // We are pushing and popping of the stack because of GC
+        let function_name = Value::new_string_object(name, &mut self.strings);
+        self.stack_push(function_name);
+        let function = Value::new_native_function(native_function);
+        self.stack_push(function);
+        self.globals.insert(
+            self.stack_peek(1)
+                .unwrap()
+                .get_string_object()
+                .unwrap()
+                .clone(),
+            self.stack_peek(0).unwrap().clone(),
+        );
+        // Removing temporary values
+        self.stack_pop().unwrap();
+        self.stack_pop().unwrap();
     }
 }
 
