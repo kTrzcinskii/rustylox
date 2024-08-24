@@ -280,7 +280,7 @@ impl Value {
 
     pub fn new_closure_object(function: Rc<RefCell<FunctionObject>>) -> Value {
         Value {
-            value_type: ValueType::NativeFunction,
+            value_type: ValueType::ClosureObject,
             actual_value: UnderlyingValue {
                 closure_object: ManuallyDrop::new(ClosureObject::new_rc(function)),
             },

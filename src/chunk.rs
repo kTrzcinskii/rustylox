@@ -341,7 +341,7 @@ impl TryFrom<&[u8]> for OperationCode {
                 {
                     return Err(OperationCodeConversionError::InvalidFormat);
                 }
-                Ok(OperationCode::Closure(value[2]))
+                Ok(OperationCode::Closure(value[1]))
             }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
