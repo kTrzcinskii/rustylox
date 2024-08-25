@@ -107,11 +107,15 @@ pub type NativeFunction = fn(&[Value]) -> Value;
 
 pub struct ClosureObject {
     pub function: Rc<RefCell<FunctionObject>>,
+    pub upvalues: Vec<UpvalueObject>,
 }
 
 impl ClosureObject {
     pub fn new(function: Rc<RefCell<FunctionObject>>) -> Self {
-        ClosureObject { function }
+        ClosureObject {
+            function,
+            upvalues: vec![],
+        }
     }
 
     fn transform_to_rc(self) -> Rc<RefCell<Self>> {
@@ -139,6 +143,18 @@ impl From<Rc<RefCell<ClosureObject>>> for Value {
             },
         }
     }
+}
+
+// GENERAL IDEA:
+// Firsly we store aboslute stack index of the variable
+// When we have instruction to close upvalue, we get value from the stack, create rc<refcell<>> of it
+// and put it inside here.
+#[derive(Clone)]
+pub struct UpvalueObject {
+    /// None when variable that upvalue references was popped from the stack
+    pub stack_index: Option<usize>,
+    /// None when variable is still on the stack
+    pub variable: Option<Rc<RefCell<Value>>>,
 }
 
 #[repr(C)]

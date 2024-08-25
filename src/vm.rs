@@ -6,7 +6,7 @@ use crate::{
     logger::Logger,
     native_functions,
     table::{InsertResult, Table},
-    value::{ClosureObject, NativeFunction, StringObject, Value, ValueType},
+    value::{ClosureObject, NativeFunction, StringObject, UpvalueObject, Value, ValueType},
 };
 
 pub enum InterpretResult {
@@ -27,6 +27,7 @@ pub enum VirtualMachineError {
     CallOnNotCallable,
     InvalidArgumentsCount,
     HandlingUpvalueOutsideOfClosure,
+    NotEnoughUpvaluesInClosure,
 }
 
 struct CallFrame {
@@ -405,9 +406,45 @@ impl VirtualMachine {
                         .expect("Closure operation should store index to function")
                         .clone();
                     let closure = Value::new_closure_object(function);
-                    self.stack_push(closure);
                     // Handle closure upvalues
-                    todo!()
+                    let upvalues_count = closure
+                        .get_closure_object()
+                        .unwrap()
+                        .borrow()
+                        .function
+                        .borrow()
+                        .upvalues_count;
+                    for _ in 0..upvalues_count {
+                        let instruction = frame
+                            .closure
+                            .borrow_mut()
+                            .function
+                            .borrow_mut()
+                            .chunk
+                            .read_operation_code(frame.instruction_pointer)
+                            .map_err(VirtualMachineError::InvalidInstructionFormat)?;
+                        frame.instruction_pointer +=
+                            OperationCode::get_instruction_bytes_length(&instruction);
+
+                        match instruction {
+                            OperationCode::LocalUpvalue(upvalue_index) => closure
+                                .get_closure_object()
+                                .unwrap()
+                                .borrow_mut()
+                                .upvalues
+                                .push(self.capture_upvalue(frame.stack_start + upvalue_index)),
+                            OperationCode::NonLocalUpvalue(upvalue_index) => closure
+                                .get_closure_object()
+                                .unwrap()
+                                .borrow_mut()
+                                .upvalues
+                                .push(
+                                    frame.closure.borrow().upvalues[upvalue_index as usize].clone(),
+                                ),
+                            _ => return Err(VirtualMachineError::NotEnoughUpvaluesInClosure),
+                        }
+                    }
+                    self.stack_push(closure);
                 }
                 OperationCode::LocalUpvalue(_) => {
                     return Err(VirtualMachineError::HandlingUpvalueOutsideOfClosure)
@@ -415,8 +452,20 @@ impl VirtualMachine {
                 OperationCode::NonLocalUpvalue(_) => {
                     return Err(VirtualMachineError::HandlingUpvalueOutsideOfClosure)
                 }
-                OperationCode::GetUpvalue(upvalue_index) => todo!(),
-                OperationCode::SetUpvalue(upvalue_index) => todo!(),
+                OperationCode::GetUpvalue(upvalue_index) => {
+                    // TODO: for now we assume index is always Some(_), it must be fixed
+                    let value = self.stack[frame.closure.borrow().upvalues[upvalue_index as usize]
+                        .stack_index
+                        .unwrap()]
+                    .clone();
+                    self.stack_push(value);
+                }
+                OperationCode::SetUpvalue(upvalue_index) => {
+                    // TODO: we are only handling case when it's still on the stack
+                    self.stack[frame.closure.borrow_mut().upvalues[upvalue_index as usize]
+                        .stack_index
+                        .unwrap()] = self.stack_peek(0).unwrap().clone();
+                }
             }
         }
     }
@@ -659,6 +708,13 @@ impl VirtualMachine {
         // Removing temporary values
         self.stack_pop().unwrap();
         self.stack_pop().unwrap();
+    }
+
+    fn capture_upvalue(&mut self, index: u8) -> UpvalueObject {
+        UpvalueObject {
+            stack_index: Some(index as usize),
+            variable: None,
+        }
     }
 }
 
