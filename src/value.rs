@@ -1,9 +1,9 @@
 use core::fmt;
-use std::{cell::RefCell, mem::ManuallyDrop, rc::Rc};
+use std::{cell::RefCell, cmp::Ordering, mem::ManuallyDrop, rc::Rc};
 
 use crate::{chunk::Chunk, table::Table};
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ValueType {
     Bool,
     Nil,
@@ -107,7 +107,7 @@ pub type NativeFunction = fn(&[Value]) -> Value;
 
 pub struct ClosureObject {
     pub function: Rc<RefCell<FunctionObject>>,
-    pub upvalues: Vec<UpvalueObject>,
+    pub upvalues: Vec<Rc<RefCell<UpvalueObject>>>,
 }
 
 impl ClosureObject {
@@ -155,6 +155,44 @@ pub struct UpvalueObject {
     pub stack_index: Option<usize>,
     /// None when variable is still on the stack
     pub variable: Option<Rc<RefCell<Value>>>,
+}
+
+impl PartialEq for UpvalueObject {
+    fn eq(&self, other: &Self) -> bool {
+        if self.stack_index != other.stack_index {
+            return false;
+        }
+        match (&self.variable, &other.variable) {
+            (None, None) => true,
+            (None, Some(_)) => false,
+            (Some(_), None) => false,
+            (Some(self_ptr), Some(other_ptr)) => Rc::ptr_eq(self_ptr, other_ptr),
+        }
+    }
+}
+
+impl Eq for UpvalueObject {}
+
+impl Ord for UpvalueObject {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Compare stack_index in reverse (descending order)
+        other.stack_index.cmp(&self.stack_index)
+    }
+}
+
+impl PartialOrd for UpvalueObject {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct UpvalueObjectBTreeWrapper(pub Rc<RefCell<UpvalueObject>>);
+
+impl From<UpvalueObjectBTreeWrapper> for Rc<RefCell<UpvalueObject>> {
+    fn from(value: UpvalueObjectBTreeWrapper) -> Self {
+        value.0
+    }
 }
 
 #[repr(C)]

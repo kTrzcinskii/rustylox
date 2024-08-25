@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::BTreeSet, rc::Rc};
 
 use crate::{
     chunk::{OperationCode, OperationCodeConversionError},
@@ -6,7 +6,10 @@ use crate::{
     logger::Logger,
     native_functions,
     table::{InsertResult, Table},
-    value::{ClosureObject, NativeFunction, StringObject, UpvalueObject, Value, ValueType},
+    value::{
+        ClosureObject, NativeFunction, StringObject, UpvalueObject, UpvalueObjectBTreeWrapper,
+        Value, ValueType,
+    },
 };
 
 pub enum InterpretResult {
@@ -28,6 +31,7 @@ pub enum VirtualMachineError {
     InvalidArgumentsCount,
     HandlingUpvalueOutsideOfClosure,
     NotEnoughUpvaluesInClosure,
+    UpvalueIncorrectFieldAccess,
 }
 
 struct CallFrame {
@@ -48,6 +52,8 @@ pub struct VirtualMachine {
     strings: Table,
     /// Collection of global variables
     globals: Table,
+    /// Collection of all upvalues that points to variables that are still on the stack
+    open_upvalues: BTreeSet<UpvalueObjectBTreeWrapper>,
 }
 
 struct BinaryOperationArguments {
@@ -64,6 +70,7 @@ impl VirtualMachine {
             stack: Vec::with_capacity(Self::INITIAL_STACK_SIZE),
             strings: Table::new(),
             globals: Table::new(),
+            open_upvalues: BTreeSet::new(),
         };
 
         vm.define_native_function("clock", native_functions::clock_native);
@@ -125,6 +132,8 @@ impl VirtualMachine {
                     let result = self.stack_pop().expect(
                         "When returning from function there should be result value on the stack",
                     );
+                    // Close every upvalue owned by returning function
+                    self.close_upvalue(frame.stack_start as usize);
                     // We executed all the frames (including the "implicit" main one) - it's time to finish
                     if self.frames.is_empty() {
                         self.stack_pop().expect("When finish program there should be the global script on the stack that must be removed");
@@ -453,18 +462,51 @@ impl VirtualMachine {
                     return Err(VirtualMachineError::HandlingUpvalueOutsideOfClosure)
                 }
                 OperationCode::GetUpvalue(upvalue_index) => {
-                    // TODO: for now we assume index is always Some(_), it must be fixed
-                    let value = self.stack[frame.closure.borrow().upvalues[upvalue_index as usize]
-                        .stack_index
-                        .unwrap()]
-                    .clone();
+                    let closure = frame.closure.borrow();
+                    let upvalue = &closure.upvalues[upvalue_index as usize];
+                    let upvalue_borrow = upvalue.borrow();
+                    let variable = upvalue_borrow.variable.clone();
+                    let stack_index = upvalue_borrow.stack_index;
+
+                    let value = match (stack_index, variable) {
+                        (None, None) => {
+                            return Err(VirtualMachineError::UpvalueIncorrectFieldAccess)
+                        }
+                        (None, Some(value)) => value.borrow().clone(),
+                        (Some(stack_index), None) => self.stack[stack_index].clone(),
+                        (Some(_), Some(_)) => {
+                            return Err(VirtualMachineError::UpvalueIncorrectFieldAccess)
+                        }
+                    };
+
                     self.stack_push(value);
                 }
                 OperationCode::SetUpvalue(upvalue_index) => {
-                    // TODO: we are only handling case when it's still on the stack
-                    self.stack[frame.closure.borrow_mut().upvalues[upvalue_index as usize]
-                        .stack_index
-                        .unwrap()] = self.stack_peek(0).unwrap().clone();
+                    let closure = frame.closure.borrow_mut();
+                    let upvalue = &closure.upvalues[upvalue_index as usize];
+                    let upvalue_borrow = upvalue.borrow();
+                    let variable = upvalue_borrow.variable.clone();
+                    let stack_index = upvalue_borrow.stack_index;
+
+                    match (stack_index, variable) {
+                        (None, None) => {
+                            return Err(VirtualMachineError::UpvalueIncorrectFieldAccess)
+                        }
+                        (None, Some(value)) => {
+                            let mut inner_value = value.borrow_mut();
+                            *inner_value = self.stack_peek(0)?.clone();
+                        }
+                        (Some(stack_index), None) => {
+                            self.stack[stack_index] = self.stack_peek(0)?.clone()
+                        }
+                        (Some(_), Some(_)) => {
+                            return Err(VirtualMachineError::UpvalueIncorrectFieldAccess)
+                        }
+                    };
+                }
+                OperationCode::CloseUpvalue => {
+                    self.close_upvalue(self.stack.len() - 1);
+                    self.stack_pop()?;
                 }
             }
         }
@@ -710,10 +752,40 @@ impl VirtualMachine {
         self.stack_pop().unwrap();
     }
 
-    fn capture_upvalue(&mut self, index: u8) -> UpvalueObject {
-        UpvalueObject {
+    fn capture_upvalue(&mut self, index: u8) -> Rc<RefCell<UpvalueObject>> {
+        let new_upvalue = Rc::new(RefCell::new(UpvalueObject {
             stack_index: Some(index as usize),
             variable: None,
+        }));
+        let wrapper = UpvalueObjectBTreeWrapper(new_upvalue.clone());
+        match self.open_upvalues.get(&wrapper) {
+            Some(already_exisiting) => already_exisiting.0.clone(),
+            None => {
+                self.open_upvalues.insert(wrapper);
+                new_upvalue
+            }
+        }
+    }
+
+    fn close_upvalue(&mut self, last_to_remove: usize) {
+        let to_close: Vec<UpvalueObjectBTreeWrapper> = self
+            .open_upvalues
+            .iter()
+            .filter(|u| {
+                u.0.borrow()
+                    .stack_index
+                    .expect("Every open upvalue should have stack_index set")
+                    >= last_to_remove
+            })
+            .cloned()
+            .collect();
+
+        for upvalue_wrapper in to_close {
+            self.open_upvalues.remove(&upvalue_wrapper);
+            let upvalue = upvalue_wrapper.0;
+            let index = upvalue.borrow().stack_index.unwrap();
+            upvalue.borrow_mut().variable = Some(Rc::new(RefCell::new(self.stack[index].clone())));
+            upvalue.borrow_mut().stack_index = None;
         }
     }
 }

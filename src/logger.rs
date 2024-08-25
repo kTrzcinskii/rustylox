@@ -179,6 +179,9 @@ impl Logger {
                         upvalue_index,
                     ))
                 }
+                OperationCode::CloseUpvalue => {
+                    return Ok(Self::simple_instruction("OP_CLOSE_UPVALUE", offset, code))
+                }
             }
         }
         Ok(0)
@@ -256,7 +259,7 @@ impl Logger {
             let to_print: &str;
             let index: u8;
 
-            let mut should_increase = false;
+            let should_increase = false;
 
             match upvalue_instruction {
                 OperationCode::LocalUpvalue(upvalue_index) => {

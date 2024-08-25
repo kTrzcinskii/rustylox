@@ -14,6 +14,8 @@ struct Local {
     /// 0 - global scope, 1 - first top-level scope, etc
     /// -1 means special state - uninitialized (it helps handle weird edge case)
     depth: i32,
+    /// True if closure has upvalue that reference this variable
+    is_captured: bool,
 }
 
 /// Used for variables that are use inside closure, but are defined outside of it
@@ -77,6 +79,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 line: 0,
             },
             depth: 0,
+            is_captured: false,
         }];
 
         Compiler {
@@ -797,6 +800,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 line: 0,
             },
             depth: 0,
+            is_captured: false,
         }];
 
         self.function = current_function;
@@ -983,6 +987,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.locals.last_mut().unwrap().push(Local {
             name,
             depth: UNINITIALIZED_DEPTH,
+            is_captured: false,
         });
     }
 
@@ -1048,6 +1053,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
         // When adding upvalue must use depth + 1, because the depth for locals is one level higher
         if let Ok(index) = self.resolve_local_variable(name, locals) {
             let upvalue_index = self.add_upvalue(index as usize, true, depth + 1);
+            // Mark local as captured by this closure
+            self.locals[depth][index as usize].is_captured = true;
             return Ok(upvalue_index as u8);
         }
 
@@ -1085,8 +1092,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
             if local.depth <= self.current_scope_depth {
                 break;
             }
-            self.locals.last_mut().unwrap().pop();
-            self.emit_instruction(OperationCode::PopStack);
+            let local = self.locals.last_mut().unwrap().pop().unwrap();
+            match local.is_captured {
+                true => self.emit_instruction(OperationCode::CloseUpvalue),
+                false => self.emit_instruction(OperationCode::PopStack),
+            };
         }
     }
 

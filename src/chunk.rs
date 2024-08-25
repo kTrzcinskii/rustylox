@@ -52,6 +52,7 @@ pub enum OperationCode {
     GetUpvalue(u8),
     // Set upvalue, arguments: (upvalue index)
     SetUpvalue(u8),
+    CloseUpvalue,
 }
 
 impl OperationCode {
@@ -88,6 +89,7 @@ impl OperationCode {
             OperationCode::NonLocalUpvalue(_) => 2,
             OperationCode::GetUpvalue(_) => 2,
             OperationCode::SetUpvalue(_) => 2,
+            OperationCode::CloseUpvalue => 1,
         }
     }
 }
@@ -126,6 +128,7 @@ impl From<OperationCode> for u8 {
             OperationCode::NonLocalUpvalue(_) => 28,
             OperationCode::GetUpvalue(_) => 29,
             OperationCode::SetUpvalue(_) => 30,
+            OperationCode::CloseUpvalue => 31,
         }
     }
 }
@@ -237,6 +240,7 @@ impl From<OperationCode> for Vec<u8> {
                     upvalue_index,
                 ]
             }
+            OperationCode::CloseUpvalue => vec![u8::from(OperationCode::CloseUpvalue)],
         }
     }
 }
@@ -423,6 +427,7 @@ impl TryFrom<&[u8]> for OperationCode {
                 }
                 Ok(OperationCode::SetUpvalue(value[1]))
             }
+            31 => Ok(OperationCode::CloseUpvalue),
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
     }
