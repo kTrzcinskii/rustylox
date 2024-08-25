@@ -11,6 +11,8 @@ use crate::{
 #[derive(Debug)]
 pub enum LoggerError {
     ConversionError(OperationCodeConversionError),
+    HandlingUpvalueOutsideOfClosure,
+    MissingUpvalueInsideClosure,
 }
 
 pub struct Logger {}
@@ -155,7 +157,27 @@ impl Logger {
                     return Ok(Self::byte_instruction("OP_CALl", offset, arguments_count))
                 }
                 OperationCode::Closure(function_index) => {
-                    return Ok(Self::byte_instruction("OP_CLOSURE", offset, function_index))
+                    return Ok(Self::closure_instruction(offset, function_index, &chunk)?)
+                }
+                OperationCode::LocalUpvalue(_) => {
+                    return Err(LoggerError::HandlingUpvalueOutsideOfClosure)
+                }
+                OperationCode::NonLocalUpvalue(_) => {
+                    return Err(LoggerError::HandlingUpvalueOutsideOfClosure)
+                }
+                OperationCode::GetUpvalue(upvalue_index) => {
+                    return Ok(Self::byte_instruction(
+                        "OP_GET_UPVALUE",
+                        offset,
+                        upvalue_index,
+                    ))
+                }
+                OperationCode::SetUpvalue(upvalue_index) => {
+                    return Ok(Self::byte_instruction(
+                        "OP_SET_UPVALUE",
+                        offset,
+                        upvalue_index,
+                    ))
                 }
             }
         }
@@ -212,5 +234,51 @@ impl Logger {
         );
 
         offset + len
+    }
+
+    #[cfg(feature = "log_trace_execution")]
+    fn closure_instruction(
+        mut offset: usize,
+        index: u8,
+        chunk: &Chunk,
+    ) -> Result<usize, LoggerError> {
+        let function = chunk.read_constant(index);
+        println!("OP_CLOSURE {:>4} {}", index, function);
+        offset += OperationCode::get_instruction_bytes_length(&OperationCode::Closure(index));
+        let function = function
+            .get_function_object()
+            .expect("Closure should point to function object");
+        for _ in 0..function.borrow().upvalues_count {
+            let upvalue_instruction = chunk
+                .read_operation_code(offset)
+                .map_err(LoggerError::ConversionError)?;
+
+            let to_print: &str;
+            let index: u8;
+
+            let mut should_increase = false;
+
+            match upvalue_instruction {
+                OperationCode::LocalUpvalue(upvalue_index) => {
+                    to_print = "local";
+                    index = upvalue_index;
+                }
+                OperationCode::NonLocalUpvalue(upvalue_index) => {
+                    to_print = "upvalue";
+                    index = upvalue_index;
+                }
+                _ => {
+                    return Err(LoggerError::MissingUpvalueInsideClosure);
+                }
+            }
+
+            println!(
+                "{:<16}      |                     {} {}",
+                offset, to_print, index
+            );
+
+            offset += 2;
+        }
+        Ok(offset)
     }
 }

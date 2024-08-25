@@ -61,6 +61,7 @@ impl StringObject {
 
 pub struct FunctionObject {
     pub arity: usize,
+    pub upvalues_count: usize,
     pub chunk: Chunk,
     pub name: Rc<RefCell<StringObject>>,
 }
@@ -69,6 +70,7 @@ impl FunctionObject {
     fn new(name: &str) -> Self {
         FunctionObject {
             arity: 0,
+            upvalues_count: 0,
             chunk: Chunk::new(),
             name: StringObject::new_rc(name),
         }

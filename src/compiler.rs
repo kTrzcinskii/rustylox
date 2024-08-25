@@ -16,6 +16,14 @@ struct Local {
     depth: i32,
 }
 
+/// Used for variables that are use inside closure, but are defined outside of it
+#[derive(PartialEq)]
+struct Upvalue {
+    /// Index on the actual vm stack of the variable Upvalue is referencing
+    index: u8,
+    is_local: bool,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum FunctionType {
     Function, // Normal function
@@ -31,6 +39,8 @@ pub struct Compiler<'a, 'b> {
     intern_strings: Option<&'b mut Table>,
     // We store it like this to have all locals in every function in nested function chain
     locals: Vec<Vec<Local>>,
+    // Same as before - each function has it's own upvalues
+    upvalues: Vec<Vec<Upvalue>>,
     current_scope_depth: i32,
 }
 
@@ -44,6 +54,10 @@ pub enum CompilerError {
 enum LocalVariableError {
     NotFound,
     UsedInOwnInitializer,
+}
+
+enum UpvalueError {
+    NotFound,
 }
 
 const UNINITIALIZED_DEPTH: i32 = -1;
@@ -73,6 +87,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             function_type,
             intern_strings: None,
             locals: vec![locals],
+            upvalues: vec![vec![]],
             current_scope_depth: 0,
         }
     }
@@ -541,26 +556,43 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn handle_named_variable(&mut self, name: &Token, can_assign: bool) {
-        let (get_operation, set_operation) = match self.resolve_local_variable(name) {
-            Ok(index) => (
-                OperationCode::GetLocal(index),
-                OperationCode::SetLocal(index),
-            ),
-            Err(LocalVariableError::NotFound) => {
-                let global_index = self.make_identifier_constant(name);
-                (
-                    OperationCode::GetGlobal(global_index),
-                    OperationCode::SetGlobal(global_index),
-                )
-            }
-            Err(LocalVariableError::UsedInOwnInitializer) => {
-                self.handle_error_at_token(
-                    &self.parser.previous.unwrap(),
-                    "Can't read value of local variable in its own initializer.",
-                );
-                return;
-            }
-        };
+        let (get_operation, set_operation) =
+            match self.resolve_local_variable(name, self.locals.last().unwrap()) {
+                Ok(index) => (
+                    OperationCode::GetLocal(index),
+                    OperationCode::SetLocal(index),
+                ),
+                Err(LocalVariableError::NotFound) => {
+                    if self.locals.len() == 1 {
+                        let global_index = self.make_identifier_constant(name);
+                        (
+                            OperationCode::GetGlobal(global_index),
+                            OperationCode::SetGlobal(global_index),
+                        )
+                    } else {
+                        match self.resolve_upvalue(name, self.locals.len() - 2) {
+                            Ok(upvalue_index) => (
+                                OperationCode::GetUpvalue(upvalue_index),
+                                OperationCode::SetUpvalue(upvalue_index),
+                            ),
+                            Err(UpvalueError::NotFound) => {
+                                let global_index = self.make_identifier_constant(name);
+                                (
+                                    OperationCode::GetGlobal(global_index),
+                                    OperationCode::SetGlobal(global_index),
+                                )
+                            }
+                        }
+                    }
+                }
+                Err(LocalVariableError::UsedInOwnInitializer) => {
+                    self.handle_error_at_token(
+                        &self.parser.previous.unwrap(),
+                        "Can't read value of local variable in its own initializer.",
+                    );
+                    return;
+                }
+            };
 
         if can_assign && self.match_current(&TokenType::Equal) {
             // Setter
@@ -770,6 +802,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.function = current_function;
         self.function_type = function_type;
         self.locals.push(current_locals);
+        self.upvalues.push(vec![]);
 
         self.start_scope();
 
@@ -812,6 +845,15 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         let function_index = self.make_constant(Value::from(finished_function));
         self.emit_instruction(OperationCode::Closure(function_index as u8));
+
+        // Emitting all closure upvalues
+        let upvalues = self.upvalues.pop().unwrap();
+        for upvalue in upvalues.iter() {
+            match upvalue.is_local {
+                true => self.emit_instruction(OperationCode::LocalUpvalue(upvalue.index)),
+                false => self.emit_instruction(OperationCode::NonLocalUpvalue(upvalue.index)),
+            }
+        }
     }
 
     fn handle_call(&mut self) {
@@ -944,8 +986,46 @@ impl<'a, 'b> Compiler<'a, 'b> {
         });
     }
 
-    fn resolve_local_variable(&self, name: &Token) -> Result<u8, LocalVariableError> {
-        for (index, local) in self.locals.last().unwrap().iter().enumerate().rev() {
+    fn add_upvalue(&mut self, index: usize, is_local: bool, depth: usize) -> usize {
+        let upvalue_count = self.function.borrow().upvalues_count;
+
+        if index > u8::MAX as usize {
+            self.handle_error_at_token(
+                &self.parser.previous.unwrap(),
+                "Too many upvalues in the function.",
+            );
+            return 0;
+        }
+
+        let upvalue = Upvalue {
+            index: index as u8,
+            is_local,
+        };
+
+        match self
+            .upvalues
+            .last()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .find(|(_, already_existing)| **already_existing == upvalue)
+        {
+            Some((index, _)) => index,
+            None => {
+                self.upvalues[depth].push(upvalue);
+                self.function.borrow_mut().upvalues_count += 1;
+
+                upvalue_count
+            }
+        }
+    }
+
+    fn resolve_local_variable(
+        &self,
+        name: &Token,
+        locals: &[Local],
+    ) -> Result<u8, LocalVariableError> {
+        for (index, local) in locals.iter().enumerate().rev() {
             if self.are_identifiers_equal(&local.name, name) {
                 if local.depth == UNINITIALIZED_DEPTH {
                     return Err(LocalVariableError::UsedInOwnInitializer);
@@ -955,6 +1035,33 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }
 
         Err(LocalVariableError::NotFound)
+    }
+
+    // It's recursive function
+    // We travel from the most recent locals finding the variable for upvalue
+    // We can't just iterate over all the locals, because we want to create this upvalue in each elements of the chain
+    // So for example, if we have functions a > b > c (> means is inside of)
+    // and we have var x declared in scope a and used in c, we want to create upvalue in b as well
+    fn resolve_upvalue(&mut self, name: &Token, depth: usize) -> Result<u8, UpvalueError> {
+        let locals = &self.locals[depth];
+
+        // When adding upvalue must use depth + 1, because the depth for locals is one level higher
+        if let Ok(index) = self.resolve_local_variable(name, locals) {
+            let upvalue_index = self.add_upvalue(index as usize, true, depth + 1);
+            return Ok(upvalue_index as u8);
+        }
+
+        // We checked all the locals
+        if depth == 0 {
+            return Err(UpvalueError::NotFound);
+        }
+
+        match self.resolve_upvalue(name, depth - 1) {
+            Ok(upvalue_index) => {
+                Ok(self.add_upvalue(upvalue_index as usize, false, depth + 1) as u8)
+            }
+            Err(_) => Err(UpvalueError::NotFound),
+        }
     }
 
     fn mark_last_initialized(&mut self) {

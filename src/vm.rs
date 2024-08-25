@@ -26,6 +26,7 @@ pub enum VirtualMachineError {
     UndefinedVariable,
     CallOnNotCallable,
     InvalidArgumentsCount,
+    HandlingUpvalueOutsideOfClosure,
 }
 
 struct CallFrame {
@@ -405,7 +406,17 @@ impl VirtualMachine {
                         .clone();
                     let closure = Value::new_closure_object(function);
                     self.stack_push(closure);
+                    // Handle closure upvalues
+                    todo!()
                 }
+                OperationCode::LocalUpvalue(_) => {
+                    return Err(VirtualMachineError::HandlingUpvalueOutsideOfClosure)
+                }
+                OperationCode::NonLocalUpvalue(_) => {
+                    return Err(VirtualMachineError::HandlingUpvalueOutsideOfClosure)
+                }
+                OperationCode::GetUpvalue(upvalue_index) => todo!(),
+                OperationCode::SetUpvalue(upvalue_index) => todo!(),
             }
         }
     }

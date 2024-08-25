@@ -44,6 +44,14 @@ pub enum OperationCode {
     Call(u8),
     /// Create closure from function, arguments: (function index in `ValueContainer`)
     Closure(u8),
+    /// Create local upvalue (can only be used right after closure or other local/nonlocal upvalue), arguments: (upvalue index)
+    LocalUpvalue(u8),
+    /// Create non local upvalue (can only be used right after closure or other local/nonlocal upvalue), arguments: (upvalue index)
+    NonLocalUpvalue(u8),
+    // Get upvalue, arguments: (upvalue index)
+    GetUpvalue(u8),
+    // Set upvalue, arguments: (upvalue index)
+    SetUpvalue(u8),
 }
 
 impl OperationCode {
@@ -76,6 +84,10 @@ impl OperationCode {
             OperationCode::JumpBack(_) => 3,
             OperationCode::Call(_) => 2,
             OperationCode::Closure(_) => 2,
+            OperationCode::LocalUpvalue(_) => 2,
+            OperationCode::NonLocalUpvalue(_) => 2,
+            OperationCode::GetUpvalue(_) => 2,
+            OperationCode::SetUpvalue(_) => 2,
         }
     }
 }
@@ -110,6 +122,10 @@ impl From<OperationCode> for u8 {
             OperationCode::JumpBack(_) => 24,
             OperationCode::Call(_) => 25,
             OperationCode::Closure(_) => 26,
+            OperationCode::LocalUpvalue(_) => 27,
+            OperationCode::NonLocalUpvalue(_) => 28,
+            OperationCode::GetUpvalue(_) => 29,
+            OperationCode::SetUpvalue(_) => 30,
         }
     }
 }
@@ -195,6 +211,30 @@ impl From<OperationCode> for Vec<u8> {
                 vec![
                     u8::from(OperationCode::Closure(function_index)),
                     function_index,
+                ]
+            }
+            OperationCode::LocalUpvalue(upvalue_index) => {
+                vec![
+                    u8::from(OperationCode::LocalUpvalue(upvalue_index)),
+                    upvalue_index,
+                ]
+            }
+            OperationCode::NonLocalUpvalue(upvalue_index) => {
+                vec![
+                    u8::from(OperationCode::LocalUpvalue(upvalue_index)),
+                    upvalue_index,
+                ]
+            }
+            OperationCode::GetUpvalue(upvalue_index) => {
+                vec![
+                    u8::from(OperationCode::GetUpvalue(upvalue_index)),
+                    upvalue_index,
+                ]
+            }
+            OperationCode::SetUpvalue(upvalue_index) => {
+                vec![
+                    u8::from(OperationCode::SetUpvalue(upvalue_index)),
+                    upvalue_index,
                 ]
             }
         }
@@ -342,6 +382,46 @@ impl TryFrom<&[u8]> for OperationCode {
                     return Err(OperationCodeConversionError::InvalidFormat);
                 }
                 Ok(OperationCode::Closure(value[1]))
+            }
+            27 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::LocalUpvalue(
+                        u8::MAX,
+                    ))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::LocalUpvalue(value[1]))
+            }
+            28 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::NonLocalUpvalue(
+                        u8::MAX,
+                    ))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::NonLocalUpvalue(value[1]))
+            }
+            29 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::GetUpvalue(
+                        u8::MAX,
+                    ))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::GetUpvalue(value[1]))
+            }
+            30 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::SetUpvalue(
+                        u8::MAX,
+                    ))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::SetUpvalue(value[1]))
             }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
