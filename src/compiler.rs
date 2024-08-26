@@ -36,8 +36,9 @@ pub struct Compiler<'a, 'b> {
     parser: Parser,
     lexer: Lexer<'a>,
     source: &'a str,
-    function: Rc<RefCell<FunctionObject>>,
-    function_type: FunctionType,
+    // We store it like this to have all functions, so that we can update upvalue of any of them
+    functions: Vec<Rc<RefCell<FunctionObject>>>,
+    functions_types: Vec<FunctionType>,
     intern_strings: Option<&'b mut Table>,
     // We store it like this to have all locals in every function in nested function chain
     locals: Vec<Vec<Local>>,
@@ -86,8 +87,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
             parser: Parser::new(),
             lexer: Lexer::new(source),
             source,
-            function: FunctionObject::new_rc("GLOBAL_SCRIPT"),
-            function_type,
+            functions: vec![FunctionObject::new_rc("GLOBAL_SCRIPT")],
+            functions_types: vec![function_type],
             intern_strings: None,
             locals: vec![locals],
             upvalues: vec![vec![]],
@@ -108,12 +109,17 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.end_compiler();
 
+        // At this point there should be only one function on the functions stack
         if !self.parser.in_error_state {
-            Logger::disassemble_chunk(&self.function.borrow().chunk, "Compiled code").unwrap();
+            Logger::disassemble_chunk(
+                &self.functions.last().unwrap().borrow().chunk,
+                "Compiled code",
+            )
+            .unwrap();
         }
 
         match self.parser.in_error_state {
-            false => Ok(self.function.clone()),
+            false => Ok(self.functions.last().unwrap().clone()),
             true => Err(CompilerError::ParserInErrorState),
         }
     }
@@ -332,7 +338,9 @@ impl<'a, 'b> Compiler<'a, 'b> {
             // This might happen if there are no tokens
             None => 0,
         };
-        self.function
+        self.functions
+            .last_mut()
+            .unwrap()
             .borrow_mut()
             .chunk
             .add_instruction(instruction, line);
@@ -340,14 +348,20 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn emit_jump_instruction(&mut self, instruction: OperationCode) -> usize {
         self.emit_instruction(instruction);
-        self.function.borrow().chunk
+        self.functions.last().unwrap().borrow().chunk
             .get_instructions_length()
             // + 1, so we end up on the byte that starts the instruction
             - (chunk::JUMP_INSTRUCTION_ARGUMENT_LENGTH + 1)
     }
 
     fn patch_jump_instruction(&mut self, instruction: OperationCode, instruction_index: usize) {
-        let bytes_to_skip = self.function.borrow().chunk.get_instructions_length()
+        let bytes_to_skip = self
+            .functions
+            .last()
+            .unwrap()
+            .borrow()
+            .chunk
+            .get_instructions_length()
             - (instruction_index + chunk::JUMP_INSTRUCTION_ARGUMENT_LENGTH + 1);
 
         if bytes_to_skip > u16::MAX as usize {
@@ -358,11 +372,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
             return;
         }
 
-        let patch_jump_result = self.function.borrow_mut().chunk.patch_jump_instruction(
-            instruction,
-            instruction_index,
-            bytes_to_skip as u16,
-        );
+        let patch_jump_result = self
+            .functions
+            .last_mut()
+            .unwrap()
+            .borrow_mut()
+            .chunk
+            .patch_jump_instruction(instruction, instruction_index, bytes_to_skip as u16);
 
         match patch_jump_result {
             Ok(_) => {}
@@ -377,7 +393,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn emit_jump_back_instruction(&mut self, jump_to_index: usize) {
         let bytes_to_skip = self
-            .function.borrow().chunk
+            .functions.last().unwrap().borrow().chunk
             .get_instructions_length()
             - jump_to_index
             // Because we must also jump over the jump instruction itself
@@ -418,7 +434,12 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn make_constant(&mut self, constant: Value) -> usize {
-        self.function.borrow_mut().chunk.add_constant(constant)
+        self.functions
+            .last_mut()
+            .unwrap()
+            .borrow_mut()
+            .chunk
+            .add_constant(constant)
     }
 
     fn make_identifier_constant(&mut self, token: &Token) -> u8 {
@@ -687,7 +708,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn handle_while_statement(&mut self) {
         // While statement body
-        let while_statement_start_index = self.function.borrow().chunk.get_instructions_length();
+        let while_statement_start_index = self
+            .functions
+            .last()
+            .unwrap()
+            .borrow()
+            .chunk
+            .get_instructions_length();
         self.consume(TokenType::LeftParen, "Expect '(' after 'while'.");
         self.compile_expression();
         self.consume(TokenType::RightParen, "Expect ')' after condition.");
@@ -720,7 +747,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         // For statement body
         // It's mutable because it might be changed to point to the incrementer
-        let mut for_statement_start_index = self.function.borrow().chunk.get_instructions_length();
+        let mut for_statement_start_index = self
+            .functions
+            .last()
+            .unwrap()
+            .borrow()
+            .chunk
+            .get_instructions_length();
 
         let mut skip_for_body_instruction_index: Option<usize> = None;
         if !self.match_current(&TokenType::Semicolon) {
@@ -734,7 +767,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         if !self.match_current(&TokenType::RightParen) {
             let jump_to_body = self.emit_jump_instruction(OperationCode::Jump(u16::MAX));
-            let increment_start = self.function.borrow().chunk.get_instructions_length();
+            let increment_start = self
+                .functions
+                .last()
+                .unwrap()
+                .borrow()
+                .chunk
+                .get_instructions_length();
 
             // Execute incrementer
             self.compile_expression();
@@ -759,7 +798,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn handle_return_statement(&mut self) {
-        if self.function_type == FunctionType::Script {
+        if *self.functions_types.last().unwrap() == FunctionType::Script {
             self.handle_error_at_token(
                 &self.parser.previous.unwrap(),
                 "Cannot return from top level script.",
@@ -788,8 +827,6 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn handle_function(&mut self, function_type: FunctionType) {
-        let (enclosing_function, enclosing_function_type) =
-            (self.function.clone(), self.function_type);
         let current_function =
             FunctionObject::new_rc(self.get_lexeme_from_token(&self.parser.previous.unwrap()));
         let current_locals = vec![Local {
@@ -803,8 +840,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
             is_captured: false,
         }];
 
-        self.function = current_function;
-        self.function_type = function_type;
+        self.functions.push(current_function);
+        self.functions_types.push(function_type);
         self.locals.push(current_locals);
         self.upvalues.push(vec![]);
 
@@ -815,13 +852,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
         // Consume function parameters
         if !self.check_current(&TokenType::RightParen) {
             // First parameter
-            self.function.borrow_mut().arity += 1;
+            self.functions.last_mut().unwrap().borrow_mut().arity += 1;
             let index = self.parse_variable("Expect parameter name");
             self.define_variable(index);
             // Other parameters
             while self.match_current(&TokenType::Comma) {
-                self.function.borrow_mut().arity += 1;
-                if self.function.borrow_mut().arity > u8::MAX as usize {
+                self.functions.last_mut().unwrap().borrow_mut().arity += 1;
+                if self.functions.last_mut().unwrap().borrow_mut().arity > u8::MAX as usize {
                     self.handle_error_at_token(
                         &self.parser.current.unwrap(),
                         "Can't have more than 255 parameters.",
@@ -841,10 +878,9 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
         self.emit_return_instruction();
 
-        let finished_function = self.function.clone();
+        let finished_function = self.functions.pop().unwrap();
 
-        self.function = enclosing_function;
-        self.function_type = enclosing_function_type;
+        self.functions_types.pop().unwrap();
         self.locals.pop();
 
         let function_index = self.make_constant(Value::from(finished_function));
@@ -992,7 +1028,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn add_upvalue(&mut self, index: usize, is_local: bool, depth: usize) -> usize {
-        let upvalue_count = self.function.borrow().upvalues_count;
+        let upvalue_count = self.functions.last().unwrap().borrow().upvalues_count;
 
         if index > u8::MAX as usize {
             self.handle_error_at_token(
@@ -1018,8 +1054,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             Some((index, _)) => index,
             None => {
                 self.upvalues[depth].push(upvalue);
-                self.function.borrow_mut().upvalues_count += 1;
-
+                self.functions[depth].borrow_mut().upvalues_count += 1;
                 upvalue_count
             }
         }
