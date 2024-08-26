@@ -224,7 +224,7 @@ impl From<OperationCode> for Vec<u8> {
             }
             OperationCode::NonLocalUpvalue(upvalue_index) => {
                 vec![
-                    u8::from(OperationCode::LocalUpvalue(upvalue_index)),
+                    u8::from(OperationCode::NonLocalUpvalue(upvalue_index)),
                     upvalue_index,
                 ]
             }

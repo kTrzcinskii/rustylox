@@ -1028,7 +1028,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn add_upvalue(&mut self, index: usize, is_local: bool, depth: usize) -> usize {
-        let upvalue_count = self.functions.last().unwrap().borrow().upvalues_count;
+        let upvalue_count = self.functions[depth].borrow().upvalues_count;
 
         if index > u8::MAX as usize {
             self.handle_error_at_token(
@@ -1051,7 +1051,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             .enumerate()
             .find(|(_, already_existing)| **already_existing == upvalue)
         {
-            Some((index, _)) => index,
+            Some((non_local_index, _)) => non_local_index,
             None => {
                 self.upvalues[depth].push(upvalue);
                 self.functions[depth].borrow_mut().upvalues_count += 1;
