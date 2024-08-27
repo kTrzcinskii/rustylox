@@ -840,10 +840,14 @@ impl<'a, 'b> Compiler<'a, 'b> {
             is_captured: false,
         }];
 
+        let previous_depth = self.current_scope_depth;
+
         self.functions.push(current_function);
         self.functions_types.push(function_type);
         self.locals.push(current_locals);
         self.upvalues.push(vec![]);
+
+        self.current_scope_depth = 0;
 
         self.start_scope();
 
@@ -875,6 +879,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.handle_block_statement();
 
         self.end_scope();
+
+        self.current_scope_depth = previous_depth;
 
         self.emit_return_instruction();
 

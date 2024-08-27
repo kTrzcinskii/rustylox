@@ -139,10 +139,8 @@ impl VirtualMachine {
                         self.stack_pop().expect("When finish program there should be the global script on the stack that must be removed");
                         return Ok(InterpretResult::Ok);
                     }
-                    // Remove function arguments + function itself from the stack
-                    self.stack.truncate(
-                        self.stack.len() - (frame.closure.borrow().function.borrow().arity + 1),
-                    );
+                    // Remove function itself, function arguments and function local variables from the stack (so we want to remove everything that starts in the stack_start of frame)
+                    self.stack.truncate(frame.stack_start as usize);
                     frame = self.frames.pop().expect("Shouldn't be empty");
                     // Push result back on stack to make it available for outter function
                     self.stack_push(result);
