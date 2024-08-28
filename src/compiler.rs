@@ -907,6 +907,24 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.emit_instruction(OperationCode::Call(arguments_count));
     }
 
+    fn handle_class_declaration(&mut self) {
+        self.consume(TokenType::Identifier, "Expect class name.");
+        let name_constant = self.make_identifier_constant(
+            &self
+                .parser
+                .previous
+                .expect("Shouldn't be empty after consuming identifier"),
+        );
+        self.declare_variable();
+        self.emit_instruction(OperationCode::Class(name_constant));
+        // We do it here so that we can use class inside it's own body (for something like factory methods etc)
+        self.define_variable(name_constant);
+
+        // Class body
+        self.consume(TokenType::LeftBrace, "Expect '{' before class body.");
+        self.consume(TokenType::RightBrace, "Expect '}' after class body.");
+    }
+
     /// Returns number of parsed arguments
     fn parse_argument_list(&mut self) -> u8 {
         let mut count: usize = 0;
@@ -1146,7 +1164,9 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn compile_declaration(&mut self) {
-        if self.match_current(&TokenType::Fun) {
+        if self.match_current(&TokenType::Class) {
+            self.handle_class_declaration();
+        } else if self.match_current(&TokenType::Fun) {
             self.handle_function_declaration();
         } else if self.match_current(&TokenType::Var) {
             self.handle_var_declaration();

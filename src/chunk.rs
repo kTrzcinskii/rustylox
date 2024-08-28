@@ -53,6 +53,8 @@ pub enum OperationCode {
     // Set upvalue, arguments: (upvalue index)
     SetUpvalue(u8),
     CloseUpvalue,
+    /// Create class with given name, arguments: (class name index in `ValueContainer`)
+    Class(u8),
 }
 
 impl OperationCode {
@@ -90,6 +92,7 @@ impl OperationCode {
             OperationCode::GetUpvalue(_) => 2,
             OperationCode::SetUpvalue(_) => 2,
             OperationCode::CloseUpvalue => 1,
+            OperationCode::Class(_) => 2,
         }
     }
 }
@@ -129,6 +132,7 @@ impl From<OperationCode> for u8 {
             OperationCode::GetUpvalue(_) => 29,
             OperationCode::SetUpvalue(_) => 30,
             OperationCode::CloseUpvalue => 31,
+            OperationCode::Class(_) => 32,
         }
     }
 }
@@ -241,6 +245,10 @@ impl From<OperationCode> for Vec<u8> {
                 ]
             }
             OperationCode::CloseUpvalue => vec![u8::from(OperationCode::CloseUpvalue)],
+            OperationCode::Class(class_name_index) => vec![
+                u8::from(OperationCode::Class(class_name_index)),
+                class_name_index,
+            ],
         }
     }
 }
@@ -428,6 +436,15 @@ impl TryFrom<&[u8]> for OperationCode {
                 Ok(OperationCode::SetUpvalue(value[1]))
             }
             31 => Ok(OperationCode::CloseUpvalue),
+            32 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::Class(u8::MAX))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::Class(value[1]))
+            }
+
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
     }

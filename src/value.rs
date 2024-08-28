@@ -12,6 +12,7 @@ pub enum ValueType {
     FunctionObject,
     NativeFunction,
     ClosureObject,
+    ClassObject,
 }
 
 #[derive(Clone)]
@@ -195,6 +196,30 @@ impl From<UpvalueObjectBTreeWrapper> for Rc<RefCell<UpvalueObject>> {
     }
 }
 
+pub struct ClassObject {
+    name: Rc<RefCell<StringObject>>,
+}
+
+impl ClassObject {
+    fn new(name: &str) -> Self {
+        ClassObject {
+            name: StringObject::new_rc(name),
+        }
+    }
+
+    fn transform_to_rc(self) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(self))
+    }
+
+    pub fn new_rc(name: &str) -> Rc<RefCell<Self>> {
+        Self::new(name).transform_to_rc()
+    }
+
+    pub fn are_equal_rc(lhs: &Rc<RefCell<ClassObject>>, rhs: &Rc<RefCell<ClassObject>>) -> bool {
+        Rc::ptr_eq(lhs, rhs)
+    }
+}
+
 #[repr(C)]
 union UnderlyingValue {
     boolean: bool,
@@ -203,6 +228,7 @@ union UnderlyingValue {
     function_object: ManuallyDrop<Rc<RefCell<FunctionObject>>>,
     native_function: NativeFunction,
     closure_object: ManuallyDrop<Rc<RefCell<ClosureObject>>>,
+    class_object: ManuallyDrop<Rc<RefCell<ClassObject>>>,
 }
 
 pub struct Value {
@@ -356,6 +382,26 @@ impl Value {
         }
     }
 
+    pub fn new_class_object(name: &str) -> Value {
+        Value {
+            value_type: ValueType::ClassObject,
+            actual_value: UnderlyingValue {
+                class_object: ManuallyDrop::new(ClassObject::new_rc(name)),
+            },
+        }
+    }
+
+    pub fn is_class_object(&self) -> bool {
+        self.value_type == ValueType::ClassObject
+    }
+
+    pub fn get_class_object(&self) -> Result<&Rc<RefCell<ClassObject>>, ValueInterpretingError> {
+        match self.value_type {
+            ValueType::ClassObject => unsafe { Ok(&self.actual_value.class_object) },
+            _ => Err(ValueInterpretingError {}),
+        }
+    }
+
     pub fn get_type(&self) -> ValueType {
         self.value_type
     }
@@ -408,6 +454,12 @@ impl Value {
                 rhs.get_closure_object()
                     .expect("ClosureObject type should contain closure object"),
             ),
+            ValueType::ClassObject => ClassObject::are_equal_rc(
+                lhs.get_class_object()
+                    .expect("ClassObject type should containt class object"),
+                rhs.get_class_object()
+                    .expect("ClassObject type should containt class object"),
+            ),
         }
     }
 }
@@ -447,6 +499,13 @@ impl Clone for Value {
                 closure_object: ManuallyDrop::new(
                     self.get_closure_object()
                         .expect("ClosureObject type should contain closure object")
+                        .clone(),
+                ),
+            },
+            ValueType::ClassObject => UnderlyingValue {
+                class_object: ManuallyDrop::new(
+                    self.get_class_object()
+                        .expect("ClassObject type should contain class object")
                         .clone(),
                 ),
             },
@@ -511,6 +570,16 @@ impl fmt::Display for Value {
                     .expect("ClosureObject type should contain closure object")
                     .borrow()
                     .function
+                    .borrow()
+                    .name
+                    .borrow()
+                    .get_value()
+            ),
+            ValueType::ClassObject => write!(
+                f,
+                "<class {}>",
+                self.get_class_object()
+                    .expect("ClassObject type should contain class object")
                     .borrow()
                     .name
                     .borrow()

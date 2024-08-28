@@ -506,6 +506,21 @@ impl VirtualMachine {
                     self.close_upvalue(self.stack.len() - 1);
                     self.stack_pop()?;
                 }
+                OperationCode::Class(class_name_index) => {
+                    let name = frame
+                        .closure
+                        .borrow_mut()
+                        .function
+                        .borrow_mut()
+                        .chunk
+                        .read_constant(class_name_index);
+                    let name_string_object = name
+                        .get_string_object()
+                        .map_err(|_| VirtualMachineError::InvalidVariableNameType)?;
+                    let new_class_object =
+                        Value::new_class_object(name_string_object.borrow().get_value());
+                    self.stack_push(new_class_object);
+                }
             }
         }
     }

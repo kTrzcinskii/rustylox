@@ -182,6 +182,14 @@ impl Logger {
                 OperationCode::CloseUpvalue => {
                     return Ok(Self::simple_instruction("OP_CLOSE_UPVALUE", offset, code))
                 }
+                OperationCode::Class(class_name_index) => {
+                    return Ok(Self::constant_instruction(
+                        "OP_CLASS",
+                        offset,
+                        class_name_index,
+                        chunk.read_constant(class_name_index),
+                    ))
+                }
             }
         }
         Ok(0)
