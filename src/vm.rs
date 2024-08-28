@@ -7,8 +7,8 @@ use crate::{
     native_functions,
     table::{InsertResult, Table},
     value::{
-        ClosureObject, NativeFunction, StringObject, UpvalueObject, UpvalueObjectBTreeWrapper,
-        Value, ValueType,
+        ClassObject, ClosureObject, NativeFunction, StringObject, UpvalueObject,
+        UpvalueObjectBTreeWrapper, Value, ValueType,
     },
 };
 
@@ -395,7 +395,7 @@ impl VirtualMachine {
                     // So peeking arguments_count always gets us the function itself from the stack
                     let callee = self.stack_peek(arguments_count as usize)?.clone();
                     // We don't use frames with native functions, as we let rust handle them
-                    let should_swap_frames = callee.get_type() != ValueType::NativeFunction;
+                    let should_swap_frames = self.should_swap_frames(&callee.get_type());
                     self.handle_call_value(callee, arguments_count, &frame)?;
                     if should_swap_frames {
                         frame = self.swap_call_frames_top(frame);
@@ -664,6 +664,15 @@ impl VirtualMachine {
         Ok(lhs < rhs)
     }
 
+    #[allow(clippy::match_like_matches_macro)]
+    fn should_swap_frames(&self, value_type: &ValueType) -> bool {
+        match value_type {
+            ValueType::NativeFunction => false,
+            ValueType::ClassObject => false,
+            _ => true,
+        }
+    }
+
     // Logic here is that in current_frame we store currently executed frame
     // When we call new function, we want to put current frame back on stack, and return the call frame of the new function
     // We know that at the point of calling this, the frame is already on the stack (or at least should be)
@@ -693,6 +702,10 @@ impl VirtualMachine {
                     callee.get_native_function().unwrap(),
                     arguments_count,
                 );
+                Ok(())
+            }
+            ValueType::ClassObject => {
+                self.handle_class_initializer_call(callee.get_class_object().unwrap());
                 Ok(())
             }
             _ => Err(VirtualMachineError::CallOnNotCallable),
@@ -743,6 +756,12 @@ impl VirtualMachine {
             .truncate(self.stack.len() - (arguments_count + 1) as usize);
         // Put result back on the stack
         self.stack_push(result);
+    }
+
+    // TODO: add support for arguments in initializer
+    fn handle_class_initializer_call(&mut self, class: &Rc<RefCell<ClassObject>>) {
+        let new_instance = Value::new_instance_object(class);
+        self.stack_push(new_instance);
     }
 
     // It only makes sense to use this function before program starts executing

@@ -13,6 +13,7 @@ pub enum ValueType {
     NativeFunction,
     ClosureObject,
     ClassObject,
+    InstanceObject,
 }
 
 #[derive(Clone)]
@@ -220,6 +221,35 @@ impl ClassObject {
     }
 }
 
+pub struct InstanceObject {
+    fields: Table,
+    class: Rc<RefCell<ClassObject>>,
+}
+
+impl InstanceObject {
+    fn new(class: &Rc<RefCell<ClassObject>>) -> Self {
+        InstanceObject {
+            class: class.clone(),
+            fields: Table::new(),
+        }
+    }
+
+    fn transform_to_rc(self) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(self))
+    }
+
+    pub fn new_rc(class: &Rc<RefCell<ClassObject>>) -> Rc<RefCell<Self>> {
+        Self::new(class).transform_to_rc()
+    }
+
+    pub fn are_equal_rc(
+        lhs: &Rc<RefCell<InstanceObject>>,
+        rhs: &Rc<RefCell<InstanceObject>>,
+    ) -> bool {
+        Rc::ptr_eq(lhs, rhs)
+    }
+}
+
 #[repr(C)]
 union UnderlyingValue {
     boolean: bool,
@@ -229,6 +259,7 @@ union UnderlyingValue {
     native_function: NativeFunction,
     closure_object: ManuallyDrop<Rc<RefCell<ClosureObject>>>,
     class_object: ManuallyDrop<Rc<RefCell<ClassObject>>>,
+    instance_object: ManuallyDrop<Rc<RefCell<InstanceObject>>>,
 }
 
 pub struct Value {
@@ -402,6 +433,28 @@ impl Value {
         }
     }
 
+    pub fn new_instance_object(class: &Rc<RefCell<ClassObject>>) -> Value {
+        Value {
+            value_type: ValueType::InstanceObject,
+            actual_value: UnderlyingValue {
+                instance_object: ManuallyDrop::new(InstanceObject::new_rc(class)),
+            },
+        }
+    }
+
+    pub fn is_instance_object(&self) -> bool {
+        self.value_type == ValueType::InstanceObject
+    }
+
+    pub fn get_instance_object(
+        &self,
+    ) -> Result<&Rc<RefCell<InstanceObject>>, ValueInterpretingError> {
+        match self.value_type {
+            ValueType::InstanceObject => unsafe { Ok(&self.actual_value.instance_object) },
+            _ => Err(ValueInterpretingError {}),
+        }
+    }
+
     pub fn get_type(&self) -> ValueType {
         self.value_type
     }
@@ -460,6 +513,12 @@ impl Value {
                 rhs.get_class_object()
                     .expect("ClassObject type should containt class object"),
             ),
+            ValueType::InstanceObject => InstanceObject::are_equal_rc(
+                lhs.get_instance_object()
+                    .expect("InstanceObject type should contain instance object"),
+                rhs.get_instance_object()
+                    .expect("InstanceObject type should contain instance object"),
+            ),
         }
     }
 }
@@ -506,6 +565,13 @@ impl Clone for Value {
                 class_object: ManuallyDrop::new(
                     self.get_class_object()
                         .expect("ClassObject type should contain class object")
+                        .clone(),
+                ),
+            },
+            ValueType::InstanceObject => UnderlyingValue {
+                instance_object: ManuallyDrop::new(
+                    self.get_instance_object()
+                        .expect("InstanceObject type should contain instance object")
                         .clone(),
                 ),
             },
@@ -580,6 +646,18 @@ impl fmt::Display for Value {
                 "<class {}>",
                 self.get_class_object()
                     .expect("ClassObject type should contain class object")
+                    .borrow()
+                    .name
+                    .borrow()
+                    .get_value()
+            ),
+            ValueType::InstanceObject => write!(
+                f,
+                "<instance {}>",
+                self.get_instance_object()
+                    .expect("InstanceObject type should contain instance object")
+                    .borrow()
+                    .class
                     .borrow()
                     .name
                     .borrow()
