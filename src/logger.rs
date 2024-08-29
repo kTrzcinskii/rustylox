@@ -190,6 +190,22 @@ impl Logger {
                         chunk.read_constant(class_name_index),
                     ))
                 }
+                OperationCode::GetProperty(property_name_index) => {
+                    return Ok(Self::constant_instruction(
+                        "OP_GET_PROPERTY",
+                        offset,
+                        property_name_index,
+                        chunk.read_constant(property_name_index),
+                    ))
+                }
+                OperationCode::SetProperty(property_name_index) => {
+                    return Ok(Self::constant_instruction(
+                        "OP_SET_PROPERTY",
+                        offset,
+                        property_name_index,
+                        chunk.read_constant(property_name_index),
+                    ))
+                }
             }
         }
         Ok(0)

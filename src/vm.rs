@@ -32,6 +32,8 @@ pub enum VirtualMachineError {
     HandlingUpvalueOutsideOfClosure,
     NotEnoughUpvaluesInClosure,
     UpvalueIncorrectFieldAccess,
+    PropertyOutsideInstance,
+    UndefinedProperty,
 }
 
 struct CallFrame {
@@ -282,9 +284,9 @@ impl VirtualMachine {
                 OperationCode::DefineGlobal(global_var_index) => {
                     let name = frame
                         .closure
-                        .borrow_mut()
+                        .borrow()
                         .function
-                        .borrow_mut()
+                        .borrow()
                         .chunk
                         .read_constant(global_var_index);
                     match name.get_string_object() {
@@ -302,9 +304,9 @@ impl VirtualMachine {
                 OperationCode::GetGlobal(global_var_index) => {
                     let name = frame
                         .closure
-                        .borrow_mut()
+                        .borrow()
                         .function
-                        .borrow_mut()
+                        .borrow()
                         .chunk
                         .read_constant(global_var_index);
                     let name_string_object = name
@@ -327,9 +329,9 @@ impl VirtualMachine {
                 OperationCode::SetGlobal(global_var_index) => {
                     let name = frame
                         .closure
-                        .borrow_mut()
+                        .borrow()
                         .function
-                        .borrow_mut()
+                        .borrow()
                         .chunk
                         .read_constant(global_var_index);
                     let name_string_object = name
@@ -404,9 +406,9 @@ impl VirtualMachine {
                 OperationCode::Closure(function_index) => {
                     let function = frame
                         .closure
-                        .borrow_mut()
+                        .borrow()
                         .function
-                        .borrow_mut()
+                        .borrow()
                         .chunk
                         .read_constant(function_index)
                         .get_function_object()
@@ -509,9 +511,9 @@ impl VirtualMachine {
                 OperationCode::Class(class_name_index) => {
                     let name = frame
                         .closure
-                        .borrow_mut()
+                        .borrow()
                         .function
-                        .borrow_mut()
+                        .borrow()
                         .chunk
                         .read_constant(class_name_index);
                     let name_string_object = name
@@ -520,6 +522,74 @@ impl VirtualMachine {
                     let new_class_object =
                         Value::new_class_object(name_string_object.borrow().get_value());
                     self.stack_push(new_class_object);
+                }
+                OperationCode::GetProperty(property_name_index) => {
+                    if !self.stack_peek(0)?.is_instance_object() {
+                        self.runtime_error_message("Only instances can have properties.", &frame);
+                        return Err(VirtualMachineError::PropertyOutsideInstance);
+                    }
+                    let instance = self.stack_peek(0)?.get_instance_object().unwrap().clone();
+
+                    let field_name = frame
+                        .closure
+                        .borrow()
+                        .function
+                        .borrow()
+                        .chunk
+                        .read_constant(property_name_index);
+                    let field_name_string = field_name
+                        .get_string_object()
+                        .expect("Field name should only be represented as string object");
+
+                    let borrowed_instance = instance.borrow();
+                    let get_result = borrowed_instance.fields.get(field_name_string);
+
+                    match get_result {
+                        Ok(property_value) => {
+                            // Remove instance from stack
+                            self.stack_pop()?;
+                            self.stack_push(property_value.clone());
+                        }
+                        Err(_) => {
+                            self.runtime_error_message(
+                                &format!(
+                                    "Undefined property {}.",
+                                    field_name_string.borrow().get_value()
+                                ),
+                                &frame,
+                            );
+                            return Err(VirtualMachineError::UndefinedProperty);
+                        }
+                    }
+                }
+                OperationCode::SetProperty(property_name_index) => {
+                    if !self.stack_peek(1)?.is_instance_object() {
+                        self.runtime_error_message("Only instances can have properties.", &frame);
+                        return Err(VirtualMachineError::PropertyOutsideInstance);
+                    }
+                    let instance = self.stack_peek(1)?.get_instance_object().unwrap().clone();
+
+                    let field_name = frame
+                        .closure
+                        .borrow()
+                        .function
+                        .borrow()
+                        .chunk
+                        .read_constant(property_name_index);
+                    let field_name_string = field_name
+                        .get_string_object()
+                        .expect("Field name should only be represented as string object");
+
+                    instance
+                        .borrow_mut()
+                        .fields
+                        .insert(field_name_string.clone(), self.stack_peek(0)?.clone());
+
+                    // On the stack we have: [instance field_value]
+                    // we want to have: [field_value];
+                    let field_value = self.stack_pop()?;
+                    self.stack_pop()?;
+                    self.stack_push(field_value);
                 }
             }
         }

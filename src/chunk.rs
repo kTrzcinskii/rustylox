@@ -55,6 +55,10 @@ pub enum OperationCode {
     CloseUpvalue,
     /// Create class with given name, arguments: (class name index in `ValueContainer`)
     Class(u8),
+    // Get value of class property, arguments: (property name index in `ValueContainer`)
+    GetProperty(u8),
+    // Set value of class property, arguments: (property name index in `ValueContainer`)
+    SetProperty(u8),
 }
 
 impl OperationCode {
@@ -93,6 +97,8 @@ impl OperationCode {
             OperationCode::SetUpvalue(_) => 2,
             OperationCode::CloseUpvalue => 1,
             OperationCode::Class(_) => 2,
+            OperationCode::GetProperty(_) => 2,
+            OperationCode::SetProperty(_) => 2,
         }
     }
 }
@@ -133,6 +139,8 @@ impl From<OperationCode> for u8 {
             OperationCode::SetUpvalue(_) => 30,
             OperationCode::CloseUpvalue => 31,
             OperationCode::Class(_) => 32,
+            OperationCode::GetProperty(_) => 33,
+            OperationCode::SetProperty(_) => 34,
         }
     }
 }
@@ -248,6 +256,14 @@ impl From<OperationCode> for Vec<u8> {
             OperationCode::Class(class_name_index) => vec![
                 u8::from(OperationCode::Class(class_name_index)),
                 class_name_index,
+            ],
+            OperationCode::GetProperty(property_name_index) => vec![
+                u8::from(OperationCode::GetProperty(property_name_index)),
+                property_name_index,
+            ],
+            OperationCode::SetProperty(property_name_index) => vec![
+                u8::from(OperationCode::SetProperty(property_name_index)),
+                property_name_index,
             ],
         }
     }
@@ -444,7 +460,26 @@ impl TryFrom<&[u8]> for OperationCode {
                 }
                 Ok(OperationCode::Class(value[1]))
             }
-
+            33 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::GetProperty(
+                        u8::MAX,
+                    ))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::GetProperty(value[1]))
+            }
+            34 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::SetProperty(
+                        u8::MAX,
+                    ))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::SetProperty(value[1]))
+            }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
     }

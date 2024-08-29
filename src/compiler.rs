@@ -69,6 +69,11 @@ struct PrefixFunctionsArguments {
     can_assign: bool,
 }
 
+#[derive(Clone, Copy)]
+struct InfixFunctionsArguments {
+    can_assign: bool,
+}
+
 impl<'a, 'b> Compiler<'a, 'b> {
     pub fn new(source: &'a str, function_type: FunctionType) -> Self {
         // First local is for VM internal use - it stores function that is currently being executed in runtime
@@ -255,14 +260,18 @@ impl<'a, 'b> Compiler<'a, 'b> {
         Ok(())
     }
 
-    fn call_infix_function(&mut self, token_type: &TokenType) -> Result<(), CompilerError> {
+    fn call_infix_function(
+        &mut self,
+        token_type: &TokenType,
+        arguments: InfixFunctionsArguments,
+    ) -> Result<(), CompilerError> {
         match token_type {
             TokenType::LeftParen => self.handle_call(),
             TokenType::RightParen => return Err(CompilerError::EmptyFunction),
             TokenType::LeftBrace => return Err(CompilerError::EmptyFunction),
             TokenType::RightBrace => return Err(CompilerError::EmptyFunction),
             TokenType::Comma => return Err(CompilerError::EmptyFunction),
-            TokenType::Dot => return Err(CompilerError::EmptyFunction),
+            TokenType::Dot => self.handle_dot(arguments.can_assign),
             TokenType::Minus => self.handle_binary(),
             TokenType::Plus => self.handle_binary(),
             TokenType::Semicolon => return Err(CompilerError::EmptyFunction),
@@ -925,6 +934,23 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.consume(TokenType::RightBrace, "Expect '}' after class body.");
     }
 
+    fn handle_dot(&mut self, can_assign: bool) {
+        self.consume(TokenType::Identifier, "Expect property name after '.'.");
+        let name_constant = self.make_identifier_constant(
+            &self
+                .parser
+                .previous
+                .expect("Shouldn't be empty after consuming identifier"),
+        );
+
+        if can_assign && self.match_current(&TokenType::Equal) {
+            self.compile_expression();
+            self.emit_instruction(OperationCode::SetProperty(name_constant));
+        } else {
+            self.emit_instruction(OperationCode::GetProperty(name_constant));
+        }
+    }
+
     /// Returns number of parsed arguments
     fn parse_argument_list(&mut self) -> u8 {
         let mut count: usize = 0;
@@ -952,15 +978,19 @@ impl<'a, 'b> Compiler<'a, 'b> {
     fn parse_precendence(&mut self, precedence: Precedence) {
         self.advance();
         let can_assign = precedence as u8 <= Precedence::Assignment as u8;
-        let args = PrefixFunctionsArguments { can_assign };
-        let prefix_fn = self.call_prefix_function(&self.parser.previous.unwrap().token_type, args);
+        let prefix_args = PrefixFunctionsArguments { can_assign };
+        let infix_args = InfixFunctionsArguments { can_assign };
+        let prefix_fn =
+            self.call_prefix_function(&self.parser.previous.unwrap().token_type, prefix_args);
         match prefix_fn {
             Ok(_) => {
                 while precedence as u8
                     <= Precedence::from(&self.parser.current.unwrap().token_type) as u8
                 {
                     self.advance();
-                    match self.call_infix_function(&self.parser.previous.unwrap().token_type) {
+                    match self
+                        .call_infix_function(&self.parser.previous.unwrap().token_type, infix_args)
+                    {
                         Ok(_) => {}
                         Err(_) => panic!("Should never fail - we check precedence first"),
                     }
@@ -1285,7 +1315,7 @@ impl From<&TokenType> for Precedence {
             TokenType::LeftBrace => Precedence::None,
             TokenType::RightBrace => Precedence::None,
             TokenType::Comma => Precedence::None,
-            TokenType::Dot => Precedence::None,
+            TokenType::Dot => Precedence::Call,
             TokenType::Minus => Precedence::Term,
             TokenType::Plus => Precedence::Term,
             TokenType::Semicolon => Precedence::None,

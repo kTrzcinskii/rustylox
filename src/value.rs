@@ -222,8 +222,8 @@ impl ClassObject {
 }
 
 pub struct InstanceObject {
-    fields: Table,
-    class: Rc<RefCell<ClassObject>>,
+    pub fields: Table,
+    pub class: Rc<RefCell<ClassObject>>,
 }
 
 impl InstanceObject {
