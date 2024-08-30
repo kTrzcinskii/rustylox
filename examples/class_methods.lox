@@ -1,0 +1,17 @@
+class Test {
+    firstMethod() {
+        print "firstMethod";
+    }
+    secondMethod() {
+        print "secondMethod";
+    }
+
+    withArguments(a,b) {
+        print a + b;
+    }
+}
+
+var t = Test();
+t.firstMethod();
+t.secondMethod();
+t.withArguments(1,2);

@@ -918,6 +918,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
 
     fn handle_class_declaration(&mut self) {
         self.consume(TokenType::Identifier, "Expect class name.");
+        let class_name_token = &self
+            .parser
+            .previous
+            .expect("Shouldn't be empty after consuimg identifier");
         let name_constant = self.make_identifier_constant(
             &self
                 .parser
@@ -929,9 +933,34 @@ impl<'a, 'b> Compiler<'a, 'b> {
         // We do it here so that we can use class inside it's own body (for something like factory methods etc)
         self.define_variable(name_constant);
 
+        // We do it to load class name contant right on the top of the stack
+        // This way, when we are handling methods we know which class they
+        // should be bind to, as the class name is right on the stack and can be read
+        self.handle_named_variable(class_name_token, false);
+
         // Class body
         self.consume(TokenType::LeftBrace, "Expect '{' before class body.");
+        while !self.check_current(&TokenType::RightBrace) && !self.check_current(&TokenType::Eof) {
+            self.handle_class_method();
+        }
         self.consume(TokenType::RightBrace, "Expect '}' after class body.");
+        // Remove class name from the stack
+        self.emit_instruction(OperationCode::PopStack);
+    }
+
+    fn handle_class_method(&mut self) {
+        self.consume(TokenType::Identifier, "Expect method name.");
+        let method_name_constant = self.make_identifier_constant(
+            &self
+                .parser
+                .previous
+                .expect("Shouldn't be empty after consuming identifier."),
+        );
+
+        let function_type = FunctionType::Function;
+        self.handle_function(function_type);
+
+        self.emit_instruction(OperationCode::Method(method_name_constant));
     }
 
     fn handle_dot(&mut self, can_assign: bool) {

@@ -59,6 +59,8 @@ pub enum OperationCode {
     GetProperty(u8),
     // Set value of class property, arguments: (property name index in `ValueContainer`)
     SetProperty(u8),
+    // Bind method to class, arguments: (method name index in `ValueContainer`)
+    Method(u8),
 }
 
 impl OperationCode {
@@ -99,6 +101,7 @@ impl OperationCode {
             OperationCode::Class(_) => 2,
             OperationCode::GetProperty(_) => 2,
             OperationCode::SetProperty(_) => 2,
+            OperationCode::Method(_) => 2,
         }
     }
 }
@@ -141,6 +144,7 @@ impl From<OperationCode> for u8 {
             OperationCode::Class(_) => 32,
             OperationCode::GetProperty(_) => 33,
             OperationCode::SetProperty(_) => 34,
+            OperationCode::Method(_) => 35,
         }
     }
 }
@@ -264,6 +268,10 @@ impl From<OperationCode> for Vec<u8> {
             OperationCode::SetProperty(property_name_index) => vec![
                 u8::from(OperationCode::SetProperty(property_name_index)),
                 property_name_index,
+            ],
+            OperationCode::Method(method_name_index) => vec![
+                u8::from(OperationCode::Method(method_name_index)),
+                method_name_index,
             ],
         }
     }
@@ -479,6 +487,14 @@ impl TryFrom<&[u8]> for OperationCode {
                     return Err(OperationCodeConversionError::InvalidFormat);
                 }
                 Ok(OperationCode::SetProperty(value[1]))
+            }
+            35 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::Method(u8::MAX))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::Method(value[1]))
             }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }

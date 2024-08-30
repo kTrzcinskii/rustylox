@@ -34,6 +34,7 @@ pub enum VirtualMachineError {
     UpvalueIncorrectFieldAccess,
     PropertyOutsideInstance,
     UndefinedProperty,
+    HandlingMethodWithoutClass,
 }
 
 struct CallFrame {
@@ -530,35 +531,43 @@ impl VirtualMachine {
                     }
                     let instance = self.stack_peek(0)?.get_instance_object().unwrap().clone();
 
-                    let field_name = frame
+                    let property_name = frame
                         .closure
                         .borrow()
                         .function
                         .borrow()
                         .chunk
                         .read_constant(property_name_index);
-                    let field_name_string = field_name
+                    let property_name_string = property_name
                         .get_string_object()
                         .expect("Field name should only be represented as string object");
 
                     let borrowed_instance = instance.borrow();
-                    let get_result = borrowed_instance.fields.get(field_name_string);
+                    let get_field_result = borrowed_instance.fields.get(property_name_string);
 
-                    match get_result {
+                    // Field take precedence over methods, so we check for them first
+                    match get_field_result {
                         Ok(property_value) => {
                             // Remove instance from stack
                             self.stack_pop()?;
                             self.stack_push(property_value.clone());
                         }
                         Err(_) => {
-                            self.runtime_error_message(
-                                &format!(
-                                    "Undefined property {}.",
-                                    field_name_string.borrow().get_value()
-                                ),
-                                &frame,
+                            // We couldn't find field, so we check if such method exists
+                            let bind_method_result = self.find_and_bind_method(
+                                &borrowed_instance.class,
+                                property_name_string,
                             );
-                            return Err(VirtualMachineError::UndefinedProperty);
+                            if bind_method_result.is_err() {
+                                self.runtime_error_message(
+                                    &format!(
+                                        "Undefined property {}.",
+                                        property_name_string.borrow().get_value()
+                                    ),
+                                    &frame,
+                                );
+                                return Err(VirtualMachineError::UndefinedProperty);
+                            }
                         }
                     }
                 }
@@ -590,6 +599,19 @@ impl VirtualMachine {
                     let field_value = self.stack_pop()?;
                     self.stack_pop()?;
                     self.stack_push(field_value);
+                }
+                OperationCode::Method(method_name_index) => {
+                    let method_name = frame
+                        .closure
+                        .borrow()
+                        .function
+                        .borrow()
+                        .chunk
+                        .read_constant(method_name_index);
+                    let method_name_string = method_name
+                        .get_string_object()
+                        .expect("Method name should only be represented as string object");
+                    self.define_method(method_name_string)?;
                 }
             }
         }
@@ -778,6 +800,16 @@ impl VirtualMachine {
                 self.handle_class_initializer_call(callee.get_class_object().unwrap());
                 Ok(())
             }
+            ValueType::BoundMethodObject => {
+                let raw_closure = callee
+                    .get_bound_method_object()
+                    .unwrap()
+                    .borrow()
+                    .method
+                    .clone();
+                self.handle_function_call(raw_closure, arguments_count, Some(frame))?;
+                Ok(())
+            }
             _ => Err(VirtualMachineError::CallOnNotCallable),
         }
     }
@@ -834,6 +866,24 @@ impl VirtualMachine {
         self.stack_push(new_instance);
     }
 
+    fn define_method(
+        &mut self,
+        name: &Rc<RefCell<StringObject>>,
+    ) -> Result<(), VirtualMachineError> {
+        let method = self.stack_peek(0)?;
+        let class = self
+            .stack_peek(1)?
+            .get_class_object()
+            .map_err(|_| VirtualMachineError::HandlingMethodWithoutClass)?;
+        class
+            .borrow_mut()
+            .add_method(name.clone(), method.clone())
+            .map_err(|_| VirtualMachineError::InvalidVariableType)?;
+        // Remove closure
+        self.stack_pop()?;
+        Ok(())
+    }
+
     // It only makes sense to use this function before program starts executing
     fn define_native_function(&mut self, name: &str, native_function: NativeFunction) {
         // We are pushing and popping of the stack because of GC
@@ -888,6 +938,30 @@ impl VirtualMachine {
             let index = upvalue.borrow().stack_index.unwrap();
             upvalue.borrow_mut().variable = Some(Rc::new(RefCell::new(self.stack[index].clone())));
             upvalue.borrow_mut().stack_index = None;
+        }
+    }
+
+    // If it find method with such name in the class it put it onto stack
+    fn find_and_bind_method(
+        &mut self,
+        class: &Rc<RefCell<ClassObject>>,
+        method_name: &Rc<RefCell<StringObject>>,
+    ) -> Result<(), VirtualMachineError> {
+        let borrowed_class = class.borrow();
+        let method_lookup_result = borrowed_class.methods.get(method_name);
+        match method_lookup_result {
+            Ok(method) => {
+                let instance = self.stack_peek(0)?.get_instance_object().unwrap();
+                let bound_method = Value::new_bound_method_object(
+                    instance.clone(),
+                    method.get_closure_object().unwrap().clone(),
+                );
+                // Replace instance with the bounded method on the stack
+                self.stack_pop()?;
+                self.stack_push(bound_method);
+                Ok(())
+            }
+            Err(_) => Err(VirtualMachineError::UndefinedProperty),
         }
     }
 }

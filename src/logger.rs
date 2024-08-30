@@ -206,6 +206,14 @@ impl Logger {
                         chunk.read_constant(property_name_index),
                     ))
                 }
+                OperationCode::Method(method_name_index) => {
+                    return Ok(Self::constant_instruction(
+                        "OP_METHOD",
+                        offset,
+                        method_name_index,
+                        chunk.read_constant(method_name_index),
+                    ))
+                }
             }
         }
         Ok(0)

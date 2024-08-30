@@ -14,6 +14,7 @@ pub enum ValueType {
     ClosureObject,
     ClassObject,
     InstanceObject,
+    BoundMethodObject,
 }
 
 #[derive(Clone)]
@@ -199,12 +200,17 @@ impl From<UpvalueObjectBTreeWrapper> for Rc<RefCell<UpvalueObject>> {
 
 pub struct ClassObject {
     name: Rc<RefCell<StringObject>>,
+    // We must ensure that the only elements that are inserted here are closures
+    pub methods: Table,
 }
+
+pub struct InvalidMethodType {}
 
 impl ClassObject {
     fn new(name: &str) -> Self {
         ClassObject {
             name: StringObject::new_rc(name),
+            methods: Table::new(),
         }
     }
 
@@ -218,6 +224,18 @@ impl ClassObject {
 
     pub fn are_equal_rc(lhs: &Rc<RefCell<ClassObject>>, rhs: &Rc<RefCell<ClassObject>>) -> bool {
         Rc::ptr_eq(lhs, rhs)
+    }
+
+    pub fn add_method(
+        &mut self,
+        method_name: Rc<RefCell<StringObject>>,
+        method: Value,
+    ) -> Result<(), InvalidMethodType> {
+        if !method.is_closure_object() {
+            return Err(InvalidMethodType {});
+        }
+        self.methods.insert(method_name, method);
+        Ok(())
     }
 }
 
@@ -250,6 +268,35 @@ impl InstanceObject {
     }
 }
 
+pub struct BoundMethodObject {
+    instance: Rc<RefCell<InstanceObject>>,
+    pub method: Rc<RefCell<ClosureObject>>,
+}
+
+impl BoundMethodObject {
+    fn new(instance: Rc<RefCell<InstanceObject>>, method: Rc<RefCell<ClosureObject>>) -> Self {
+        BoundMethodObject { instance, method }
+    }
+
+    fn transform_to_rc(self) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(self))
+    }
+
+    pub fn new_rc(
+        instance: Rc<RefCell<InstanceObject>>,
+        method: Rc<RefCell<ClosureObject>>,
+    ) -> Rc<RefCell<Self>> {
+        Self::new(instance, method).transform_to_rc()
+    }
+
+    pub fn are_equal_rc(
+        lhs: &Rc<RefCell<BoundMethodObject>>,
+        rhs: &Rc<RefCell<BoundMethodObject>>,
+    ) -> bool {
+        Rc::ptr_eq(lhs, rhs)
+    }
+}
+
 #[repr(C)]
 union UnderlyingValue {
     boolean: bool,
@@ -260,6 +307,7 @@ union UnderlyingValue {
     closure_object: ManuallyDrop<Rc<RefCell<ClosureObject>>>,
     class_object: ManuallyDrop<Rc<RefCell<ClassObject>>>,
     instance_object: ManuallyDrop<Rc<RefCell<InstanceObject>>>,
+    bound_method_object: ManuallyDrop<Rc<RefCell<BoundMethodObject>>>,
 }
 
 pub struct Value {
@@ -455,6 +503,31 @@ impl Value {
         }
     }
 
+    pub fn new_bound_method_object(
+        instance: Rc<RefCell<InstanceObject>>,
+        method: Rc<RefCell<ClosureObject>>,
+    ) -> Value {
+        Value {
+            value_type: ValueType::BoundMethodObject,
+            actual_value: UnderlyingValue {
+                bound_method_object: ManuallyDrop::new(BoundMethodObject::new_rc(instance, method)),
+            },
+        }
+    }
+
+    pub fn is_bound_method_object(&self) -> bool {
+        self.value_type == ValueType::BoundMethodObject
+    }
+
+    pub fn get_bound_method_object(
+        &self,
+    ) -> Result<&Rc<RefCell<BoundMethodObject>>, ValueInterpretingError> {
+        match self.value_type {
+            ValueType::BoundMethodObject => unsafe { Ok(&self.actual_value.bound_method_object) },
+            _ => Err(ValueInterpretingError {}),
+        }
+    }
+
     pub fn get_type(&self) -> ValueType {
         self.value_type
     }
@@ -519,6 +592,12 @@ impl Value {
                 rhs.get_instance_object()
                     .expect("InstanceObject type should contain instance object"),
             ),
+            ValueType::BoundMethodObject => BoundMethodObject::are_equal_rc(
+                lhs.get_bound_method_object()
+                    .expect("BoundMethodObject type should contain bound method object."),
+                rhs.get_bound_method_object()
+                    .expect("BoundMethodObject type should contain bound method object."),
+            ),
         }
     }
 }
@@ -575,6 +654,13 @@ impl Clone for Value {
                         .clone(),
                 ),
             },
+            ValueType::BoundMethodObject => UnderlyingValue {
+                bound_method_object: ManuallyDrop::new(
+                    self.get_bound_method_object()
+                        .expect("BoundMethodObject type should contain bound method object.")
+                        .clone(),
+                ),
+            },
         };
         Self {
             value_type: self.value_type,
@@ -591,6 +677,12 @@ impl Drop for Value {
             unsafe { ManuallyDrop::drop(&mut self.actual_value.function_object) }
         } else if self.is_closure_object() {
             unsafe { ManuallyDrop::drop(&mut self.actual_value.closure_object) }
+        } else if self.is_class_object() {
+            unsafe { ManuallyDrop::drop(&mut self.actual_value.class_object) }
+        } else if self.is_instance_object() {
+            unsafe { ManuallyDrop::drop(&mut self.actual_value.instance_object) }
+        } else if self.is_bound_method_object() {
+            unsafe { ManuallyDrop::drop(&mut self.actual_value.bound_method_object) }
         }
     }
 }
@@ -658,6 +750,20 @@ impl fmt::Display for Value {
                     .expect("InstanceObject type should contain instance object")
                     .borrow()
                     .class
+                    .borrow()
+                    .name
+                    .borrow()
+                    .get_value()
+            ),
+            ValueType::BoundMethodObject => write!(
+                f,
+                "<fn {}>",
+                self.get_bound_method_object()
+                    .expect("BoundMethodObject type should contain bound method object.")
+                    .borrow()
+                    .method
+                    .borrow()
+                    .function
                     .borrow()
                     .name
                     .borrow()
