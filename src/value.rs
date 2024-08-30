@@ -295,6 +295,21 @@ impl BoundMethodObject {
     ) -> bool {
         Rc::ptr_eq(lhs, rhs)
     }
+
+    pub fn get_instance_as_value(&self) -> Value {
+        Value::from(self.instance.clone())
+    }
+}
+
+impl From<Rc<RefCell<InstanceObject>>> for Value {
+    fn from(value: Rc<RefCell<InstanceObject>>) -> Self {
+        Value {
+            value_type: ValueType::InstanceObject,
+            actual_value: UnderlyingValue {
+                instance_object: ManuallyDrop::new(value),
+            },
+        }
+    }
 }
 
 #[repr(C)]

@@ -1,0 +1,23 @@
+class City {
+    sayMe() {
+        print this.cityName;
+    }
+}
+
+var city = City();
+city.cityName = "Olsztyn";
+city.sayMe();
+var methodOnly = city.sayMe;
+methodOnly();
+
+class Nested {
+  method() {
+    fun nestesdFunc() {
+      print this;
+    }
+
+    nestesdFunc();
+  }
+}
+
+Nested().method();

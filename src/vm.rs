@@ -801,6 +801,14 @@ impl VirtualMachine {
                 Ok(())
             }
             ValueType::BoundMethodObject => {
+                // Put "this" at special slot zero of locals
+                let top = self.stack.len();
+                self.stack[top - arguments_count as usize - 1] = callee
+                    .get_bound_method_object()
+                    .unwrap()
+                    .borrow()
+                    .get_instance_as_value();
+
                 let raw_closure = callee
                     .get_bound_method_object()
                     .unwrap()

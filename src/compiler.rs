@@ -30,7 +30,10 @@ struct Upvalue {
 pub enum FunctionType {
     Function, // Normal function
     Script,   // Top level function - whole global scope is put in here
+    Method,   // Class method
 }
+
+pub struct CompilingClass {}
 
 pub struct Compiler<'a, 'b> {
     parser: Parser,
@@ -45,6 +48,9 @@ pub struct Compiler<'a, 'b> {
     // Same as before - each function has it's own upvalues
     upvalues: Vec<Vec<Upvalue>>,
     current_scope_depth: i32,
+    // Stack of currenlty compiling classes (classes can be nesteed one in another)
+    // If empty then we aren't inside any class
+    compiling_classes: Vec<CompilingClass>,
 }
 
 #[derive(Debug)]
@@ -98,6 +104,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             locals: vec![locals],
             upvalues: vec![vec![]],
             current_scope_depth: 0,
+            compiling_classes: vec![],
         }
     }
 
@@ -251,7 +258,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             TokenType::Print => return Err(CompilerError::EmptyFunction),
             TokenType::Return => return Err(CompilerError::EmptyFunction),
             TokenType::Super => return Err(CompilerError::EmptyFunction),
-            TokenType::This => return Err(CompilerError::EmptyFunction),
+            TokenType::This => self.handle_this(),
             TokenType::True => self.handle_literal(),
             TokenType::Var => return Err(CompilerError::EmptyFunction),
             TokenType::While => return Err(CompilerError::EmptyFunction),
@@ -838,9 +845,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
     fn handle_function(&mut self, function_type: FunctionType) {
         let current_function =
             FunctionObject::new_rc(self.get_lexeme_from_token(&self.parser.previous.unwrap()));
+        let special_token_type = match function_type {
+            FunctionType::Method => TokenType::This,
+            _ => TokenType::Identifier,
+        };
         let current_locals = vec![Local {
             name: Token {
-                token_type: TokenType::Identifier,
+                token_type: special_token_type,
                 start: 0,
                 length: 0,
                 line: 0,
@@ -933,6 +944,9 @@ impl<'a, 'b> Compiler<'a, 'b> {
         // We do it here so that we can use class inside it's own body (for something like factory methods etc)
         self.define_variable(name_constant);
 
+        // We add new class to currently compiling classes
+        self.compiling_classes.push(CompilingClass {});
+
         // We do it to load class name contant right on the top of the stack
         // This way, when we are handling methods we know which class they
         // should be bind to, as the class name is right on the stack and can be read
@@ -946,6 +960,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.consume(TokenType::RightBrace, "Expect '}' after class body.");
         // Remove class name from the stack
         self.emit_instruction(OperationCode::PopStack);
+
+        // Finish compiling class
+        self.compiling_classes
+            .pop()
+            .expect("Should not be empty during class compilation");
     }
 
     fn handle_class_method(&mut self) {
@@ -957,7 +976,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 .expect("Shouldn't be empty after consuming identifier."),
         );
 
-        let function_type = FunctionType::Function;
+        let function_type = FunctionType::Method;
         self.handle_function(function_type);
 
         self.emit_instruction(OperationCode::Method(method_name_constant));
@@ -978,6 +997,21 @@ impl<'a, 'b> Compiler<'a, 'b> {
         } else {
             self.emit_instruction(OperationCode::GetProperty(name_constant));
         }
+    }
+
+    fn handle_this(&mut self) {
+        // If we aren't compiling any class using this is an error
+        if self.compiling_classes.is_empty() {
+            self.handle_error_at_token(
+                &self.parser.previous.unwrap(),
+                "Can't use 'this' outside of class.",
+            );
+            return;
+        }
+        // We treat "this" as local variable so we have a lot of features for free
+        // But we need to actually store it, and we do it by using
+        // locals[0], as we made it a special "empty" local for our internal use
+        self.handle_variable(false);
     }
 
     /// Returns number of parsed arguments
@@ -1050,6 +1084,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn are_identifiers_equal(&self, lhs: &Token, rhs: &Token) -> bool {
+        // We do it so that our "fake this" works as first local in methods
+        if lhs.token_type == rhs.token_type && lhs.token_type == TokenType::This {
+            return true;
+        }
         if lhs.token_type != TokenType::Identifier || rhs.token_type != TokenType::Identifier {
             return false;
         }
