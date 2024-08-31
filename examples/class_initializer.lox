@@ -1,0 +1,23 @@
+class Numbers {
+    init(a, b) {
+        print "initializing numbers!";
+        if (a < 0) {
+            this.a = 0;
+            this.b = 0;
+            return;
+        }
+        this.a = a;
+        this.b = b;
+    }
+
+    showAB() {
+        print this.a;
+        print this.b;
+    }
+}
+
+var n = Numbers(1,2);
+n.showAB();
+
+var nn = Numbers(-1,2);
+nn.showAB();

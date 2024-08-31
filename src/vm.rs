@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::BTreeSet, rc::Rc};
 
 use crate::{
     chunk::{OperationCode, OperationCodeConversionError},
-    compiler::{Compiler, FunctionType},
+    compiler::{Compiler, FunctionType, INITIALIZER_NAME},
     logger::Logger,
     native_functions,
     table::{InsertResult, Table},
@@ -57,6 +57,8 @@ pub struct VirtualMachine {
     globals: Table,
     /// Collection of all upvalues that points to variables that are still on the stack
     open_upvalues: BTreeSet<UpvalueObjectBTreeWrapper>,
+    /// Special string to lookup initializer method in class
+    init_string: Rc<RefCell<StringObject>>,
 }
 
 struct BinaryOperationArguments {
@@ -68,12 +70,16 @@ impl VirtualMachine {
     const INITIAL_STACK_SIZE: usize = 8;
 
     pub fn new() -> Self {
+        let mut strings = Table::new();
+        let init_string = Value::new_string_object(INITIALIZER_NAME, &mut strings);
+
         let mut vm = VirtualMachine {
             frames: Vec::with_capacity(Self::INITIAL_STACK_SIZE),
             stack: Vec::with_capacity(Self::INITIAL_STACK_SIZE),
-            strings: Table::new(),
+            strings,
             globals: Table::new(),
             open_upvalues: BTreeSet::new(),
+            init_string: init_string.get_string_object().unwrap().clone(),
         };
 
         vm.define_native_function("clock", native_functions::clock_native);
@@ -398,7 +404,7 @@ impl VirtualMachine {
                     // So peeking arguments_count always gets us the function itself from the stack
                     let callee = self.stack_peek(arguments_count as usize)?.clone();
                     // We don't use frames with native functions, as we let rust handle them
-                    let should_swap_frames = self.should_swap_frames(&callee.get_type());
+                    let should_swap_frames = self.should_swap_frames(&callee);
                     self.handle_call_value(callee, arguments_count, &frame)?;
                     if should_swap_frames {
                         frame = self.swap_call_frames_top(frame);
@@ -756,11 +762,19 @@ impl VirtualMachine {
         Ok(lhs < rhs)
     }
 
-    #[allow(clippy::match_like_matches_macro)]
-    fn should_swap_frames(&self, value_type: &ValueType) -> bool {
-        match value_type {
+    fn should_swap_frames(&self, callee: &Value) -> bool {
+        match callee.get_type() {
             ValueType::NativeFunction => false,
-            ValueType::ClassObject => false,
+            ValueType::ClassObject => {
+                // We should only swap frames if we wanna call initializer
+                callee
+                    .get_class_object()
+                    .unwrap()
+                    .borrow()
+                    .methods
+                    .get(&self.init_string)
+                    .is_ok()
+            }
             _ => true,
         }
     }
@@ -797,7 +811,11 @@ impl VirtualMachine {
                 Ok(())
             }
             ValueType::ClassObject => {
-                self.handle_class_initializer_call(callee.get_class_object().unwrap());
+                self.handle_class_initializer_call(
+                    callee.get_class_object().unwrap(),
+                    arguments_count,
+                    Some(frame),
+                )?;
                 Ok(())
             }
             ValueType::BoundMethodObject => {
@@ -868,10 +886,36 @@ impl VirtualMachine {
         self.stack_push(result);
     }
 
-    // TODO: add support for arguments in initializer
-    fn handle_class_initializer_call(&mut self, class: &Rc<RefCell<ClassObject>>) {
+    fn handle_class_initializer_call(
+        &mut self,
+        class: &Rc<RefCell<ClassObject>>,
+        arguments_count: u8,
+        frame: Option<&CallFrame>,
+    ) -> Result<(), VirtualMachineError> {
         let new_instance = Value::new_instance_object(class);
-        self.stack_push(new_instance);
+        let top = self.stack.len();
+        self.stack[top - arguments_count as usize - 1] = new_instance;
+        match class.borrow().methods.get(&self.init_string) {
+            Ok(initializer) => {
+                // Initialize exits, we just call it as normal function
+                self.handle_function_call(
+                    initializer.get_closure_object().unwrap().clone(),
+                    arguments_count,
+                    frame,
+                )
+            }
+            Err(_) => {
+                // Initializer doesn't exists, if we find any arguments passed anyway we know it's an error
+                if arguments_count > 0 {
+                    self.runtime_error_message(
+                        &format!("Expected 0 arguments, got {}", arguments_count),
+                        frame.unwrap(),
+                    );
+                    return Err(VirtualMachineError::InvalidArgumentsCount);
+                }
+                Ok(())
+            }
+        }
     }
 
     fn define_method(

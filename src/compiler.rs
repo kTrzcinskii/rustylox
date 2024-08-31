@@ -9,6 +9,8 @@ use crate::{
     value::{FunctionObject, Value},
 };
 
+pub const INITIALIZER_NAME: &str = "init";
+
 struct Local {
     name: Token,
     /// 0 - global scope, 1 - first top-level scope, etc
@@ -28,9 +30,10 @@ struct Upvalue {
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum FunctionType {
-    Function, // Normal function
-    Script,   // Top level function - whole global scope is put in here
-    Method,   // Class method
+    Function,    // Normal function
+    Script,      // Top level function - whole global scope is put in here
+    Method,      // Class method
+    Initializer, // Class initializer
 }
 
 pub struct CompilingClass {}
@@ -431,8 +434,12 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn emit_return_instruction(&mut self) {
-        // Implicitly returning nil
-        self.emit_constant(Value::new_nil());
+        // Implicitly returning "this" if we are inside initializer, nil otherwise
+        match self.functions_types.last().unwrap() {
+            // "this" is always first element in local array
+            FunctionType::Initializer => self.emit_instruction(OperationCode::GetLocal(0)),
+            _ => self.emit_constant(Value::new_nil()),
+        }
         self.emit_instruction(OperationCode::Return);
     }
 
@@ -825,6 +832,13 @@ impl<'a, 'b> Compiler<'a, 'b> {
         if self.match_current(&TokenType::Semicolon) {
             self.emit_return_instruction();
             return;
+        } else {
+            // If we are using "return" inside initializer, and it's followed by expression (meaning we are trying to return
+            // value from initializer), we report it as error
+            self.handle_error_at_token(
+                &self.parser.previous.unwrap(),
+                "Can't return a value from an initializer.",
+            );
         }
 
         self.compile_expression();
@@ -847,6 +861,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             FunctionObject::new_rc(self.get_lexeme_from_token(&self.parser.previous.unwrap()));
         let special_token_type = match function_type {
             FunctionType::Method => TokenType::This,
+            FunctionType::Initializer => TokenType::This,
             _ => TokenType::Identifier,
         };
         let current_locals = vec![Local {
@@ -976,7 +991,10 @@ impl<'a, 'b> Compiler<'a, 'b> {
                 .expect("Shouldn't be empty after consuming identifier."),
         );
 
-        let function_type = FunctionType::Method;
+        let function_type = match self.get_lexeme_from_token(&self.parser.previous.unwrap()) {
+            INITIALIZER_NAME => FunctionType::Initializer,
+            _ => FunctionType::Method,
+        };
         self.handle_function(function_type);
 
         self.emit_instruction(OperationCode::Method(method_name_constant));
