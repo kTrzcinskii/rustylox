@@ -214,6 +214,15 @@ impl Logger {
                         chunk.read_constant(method_name_index),
                     ))
                 }
+                OperationCode::InvokeProperty(property_name_index, arguments_count) => {
+                    return Ok(Self::invoke_property_instruction(
+                        "OP_INVOKE_PROP",
+                        offset,
+                        property_name_index,
+                        arguments_count,
+                        &chunk.read_constant(property_name_index),
+                    ))
+                }
             }
         }
         Ok(0)
@@ -315,5 +324,24 @@ impl Logger {
             offset += 2;
         }
         Ok(offset)
+    }
+
+    #[cfg(feature = "log_trace_execution")]
+    fn invoke_property_instruction(
+        name: &str,
+        mut offset: usize,
+        property_name_index: u8,
+        arguments_count: u8,
+        property_name: &Value,
+    ) {
+        println!(
+            "{:<16} ({} args) {:>4} {}",
+            name, arguments_count, property_name_index, property_name
+        );
+        offset
+            + OperationCode::get_instruction_bytes_length(&OperationCode::InvokeProperty(
+                property_name_index,
+                arguments_count,
+            ))
     }
 }

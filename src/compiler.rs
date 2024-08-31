@@ -835,10 +835,12 @@ impl<'a, 'b> Compiler<'a, 'b> {
         } else {
             // If we are using "return" inside initializer, and it's followed by expression (meaning we are trying to return
             // value from initializer), we report it as error
-            self.handle_error_at_token(
-                &self.parser.previous.unwrap(),
-                "Can't return a value from an initializer.",
-            );
+            if *self.functions_types.last().unwrap() == FunctionType::Initializer {
+                self.handle_error_at_token(
+                    &self.parser.previous.unwrap(),
+                    "Can't return a value from an initializer.",
+                );
+            }
         }
 
         self.compile_expression();
@@ -1012,6 +1014,14 @@ impl<'a, 'b> Compiler<'a, 'b> {
         if can_assign && self.match_current(&TokenType::Equal) {
             self.compile_expression();
             self.emit_instruction(OperationCode::SetProperty(name_constant));
+        } else if self.match_current(&TokenType::LeftParen) {
+            // If we encounter '(' right after property, we know it's gonna emmit later "Call" operation,
+            // so we emit special optimize instruction which does both
+            let arguments_count = self.parse_argument_list();
+            self.emit_instruction(OperationCode::InvokeProperty(
+                name_constant,
+                arguments_count,
+            ));
         } else {
             self.emit_instruction(OperationCode::GetProperty(name_constant));
         }

@@ -61,6 +61,9 @@ pub enum OperationCode {
     SetProperty(u8),
     // Bind method to class, arguments: (method name index in `ValueContainer`)
     Method(u8),
+    // Operation for getting and calling property, arguments: (property name index in `ValueContainer`, number of call arguments)
+    // This operation doesn't provide new functionality, but rather optimize existing ones, chaining together `GerProperty` and `Call``
+    InvokeProperty(u8, u8),
 }
 
 impl OperationCode {
@@ -102,6 +105,7 @@ impl OperationCode {
             OperationCode::GetProperty(_) => 2,
             OperationCode::SetProperty(_) => 2,
             OperationCode::Method(_) => 2,
+            OperationCode::InvokeProperty(_, _) => 3,
         }
     }
 }
@@ -145,6 +149,7 @@ impl From<OperationCode> for u8 {
             OperationCode::GetProperty(_) => 33,
             OperationCode::SetProperty(_) => 34,
             OperationCode::Method(_) => 35,
+            OperationCode::InvokeProperty(_, _) => 36,
         }
     }
 }
@@ -272,6 +277,14 @@ impl From<OperationCode> for Vec<u8> {
             OperationCode::Method(method_name_index) => vec![
                 u8::from(OperationCode::Method(method_name_index)),
                 method_name_index,
+            ],
+            OperationCode::InvokeProperty(property_name_index, arguments_count) => vec![
+                u8::from(OperationCode::InvokeProperty(
+                    property_name_index,
+                    arguments_count,
+                )),
+                property_name_index,
+                arguments_count,
             ],
         }
     }
@@ -495,6 +508,17 @@ impl TryFrom<&[u8]> for OperationCode {
                     return Err(OperationCodeConversionError::InvalidFormat);
                 }
                 Ok(OperationCode::Method(value[1]))
+            }
+            36 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::InvokeProperty(
+                        u8::MAX,
+                        u8::MAX,
+                    ))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::InvokeProperty(value[1], value[2]))
             }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }

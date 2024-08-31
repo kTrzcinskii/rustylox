@@ -619,6 +619,25 @@ impl VirtualMachine {
                         .expect("Method name should only be represented as string object");
                     self.define_method(method_name_string)?;
                 }
+                OperationCode::InvokeProperty(property_name_index, arguments_count) => {
+                    let property_name = frame
+                        .closure
+                        .borrow()
+                        .function
+                        .borrow()
+                        .chunk
+                        .read_constant(property_name_index);
+                    let property_name_string = property_name
+                        .get_string_object()
+                        .expect("Property name should only be represented as string object");
+                    if let Err(e) =
+                        self.invoke_property(property_name_string, arguments_count, &frame)
+                    {
+                        self.runtime_error_message("Only instances have properties.", &frame);
+                        return Err(e);
+                    }
+                    frame = self.swap_call_frames_top(frame);
+                }
             }
         }
     }
@@ -1014,6 +1033,56 @@ impl VirtualMachine {
                 Ok(())
             }
             Err(_) => Err(VirtualMachineError::UndefinedProperty),
+        }
+    }
+
+    fn invoke_property(
+        &mut self,
+        name: &Rc<RefCell<StringObject>>,
+        arguments_count: u8,
+        frame: &CallFrame,
+    ) -> Result<(), VirtualMachineError> {
+        let instance = self
+            .stack_peek(arguments_count as usize)?
+            .get_instance_object()
+            .map_err(|_| VirtualMachineError::PropertyOutsideInstance)?
+            .clone();
+
+        let result = match instance.borrow().fields.get(name) {
+            // Check if there is field with such name
+            Ok(field) => {
+                let top = self.stack.len();
+                self.stack[top - arguments_count as usize - 1] = field.clone();
+                self.handle_call_value(field.clone(), arguments_count, frame)
+            }
+            Err(_) => {
+                let class = instance.borrow().class.clone();
+                self.invoke_property_from_class(&class, name, arguments_count, frame)
+            }
+        };
+        result
+    }
+
+    fn invoke_property_from_class(
+        &mut self,
+        class: &Rc<RefCell<ClassObject>>,
+        name: &Rc<RefCell<StringObject>>,
+        arguments_count: u8,
+        frame: &CallFrame,
+    ) -> Result<(), VirtualMachineError> {
+        match class.borrow().methods.get(name) {
+            Ok(method) => self.handle_function_call(
+                method.get_closure_object().unwrap().clone(),
+                arguments_count,
+                Some(frame),
+            ),
+            Err(_) => {
+                self.runtime_error_message(
+                    &format!("Undefined property {}.", name.borrow().get_value()),
+                    frame,
+                );
+                Err(VirtualMachineError::UndefinedProperty)
+            }
         }
     }
 }
