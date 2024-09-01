@@ -653,13 +653,29 @@ impl VirtualMachine {
                             );
                             // Remove current class from stack
                             self.stack_pop()?;
-                            // TODO: properly handle base class on the stack once all inheritance is done
                         }
                         Err(_) => {
                             self.runtime_error_message("Base class must be a class.", &frame);
                             return Err(VirtualMachineError::InvalidVariableType);
                         }
                     }
+                }
+                OperationCode::GetSuper(method_name_index) => {
+                    let method_name = frame
+                        .closure
+                        .borrow()
+                        .function
+                        .borrow()
+                        .chunk
+                        .read_constant(method_name_index);
+                    let method_name_string = method_name
+                        .get_string_object()
+                        .expect("Method name should only be represented as string object");
+                    let base_class_value = self.stack_pop()?;
+                    let base_class = base_class_value
+                        .get_class_object()
+                        .map_err(|_| VirtualMachineError::InvalidVariableType)?;
+                    self.find_and_bind_method(base_class, method_name_string)?;
                 }
             }
         }

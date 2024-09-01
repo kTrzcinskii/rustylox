@@ -262,7 +262,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             TokenType::Or => return Err(CompilerError::EmptyFunction),
             TokenType::Print => return Err(CompilerError::EmptyFunction),
             TokenType::Return => return Err(CompilerError::EmptyFunction),
-            TokenType::Super => return Err(CompilerError::EmptyFunction),
+            TokenType::Super => self.handle_super(),
             TokenType::This => self.handle_this(),
             TokenType::True => self.handle_literal(),
             TokenType::Var => return Err(CompilerError::EmptyFunction),
@@ -1082,6 +1082,51 @@ impl<'a, 'b> Compiler<'a, 'b> {
         // But we need to actually store it, and we do it by using
         // locals[0], as we made it a special "empty" local for our internal use
         self.handle_variable(false);
+    }
+
+    fn handle_super(&mut self) {
+        match self.compiling_classes.last() {
+            Some(compiling_class) => {
+                if !compiling_class.has_base_class {
+                    self.handle_error_at_token(
+                        &self.parser.previous.unwrap(),
+                        "Can't use 'super' inside of class which doesn't have base clas.",
+                    );
+                }
+            }
+            None => {
+                self.handle_error_at_token(
+                    &self.parser.previous.unwrap(),
+                    "Can't use 'super' outside of class.",
+                );
+            }
+        }
+
+        self.consume(TokenType::Dot, "Expect '.' after 'super'.");
+        self.consume(TokenType::Identifier, "Expect base class method name.");
+        let method_name_index = self.make_identifier_constant(&self.parser.previous.unwrap());
+
+        // Put current instance ("this") and base class ("super") on the stack
+        self.handle_named_variable(
+            &Token {
+                token_type: TokenType::This,
+                start: 0,
+                length: 0,
+                line: 0,
+            },
+            false,
+        );
+        self.handle_named_variable(
+            &Token {
+                token_type: TokenType::Super,
+                start: 0,
+                length: 0,
+                line: 0,
+            },
+            false,
+        );
+
+        self.emit_instruction(OperationCode::GetSuper(method_name_index));
     }
 
     /// Returns number of parsed arguments

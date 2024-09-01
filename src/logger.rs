@@ -226,6 +226,14 @@ impl Logger {
                 OperationCode::Inherit => {
                     return Ok(Self::simple_instruction("OP_INHERIT", offset, code))
                 }
+                OperationCode::GetSuper(method_name_index) => {
+                    return Ok(Self::constant_instruction(
+                        "OP_GET_SUPER",
+                        offset,
+                        method_name_index,
+                        chunk.read_constant(method_name_index),
+                    ))
+                }
             }
         }
         Ok(0)
@@ -332,7 +340,7 @@ impl Logger {
     #[cfg(feature = "log_trace_execution")]
     fn invoke_property_instruction(
         name: &str,
-        mut offset: usize,
+        offset: usize,
         property_name_index: u8,
         arguments_count: u8,
         property_name: &Value,

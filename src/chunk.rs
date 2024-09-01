@@ -65,6 +65,8 @@ pub enum OperationCode {
     // This operation doesn't provide new functionality, but rather optimize existing ones, chaining together `GerProperty` and `Call``
     InvokeProperty(u8, u8),
     Inherit,
+    // Get method from super class, arguments: (method name index in `ValueContainer`)
+    GetSuper(u8),
 }
 
 impl OperationCode {
@@ -108,6 +110,7 @@ impl OperationCode {
             OperationCode::Method(_) => 2,
             OperationCode::InvokeProperty(_, _) => 3,
             OperationCode::Inherit => 1,
+            OperationCode::GetSuper(_) => 2,
         }
     }
 }
@@ -153,6 +156,7 @@ impl From<OperationCode> for u8 {
             OperationCode::Method(_) => 35,
             OperationCode::InvokeProperty(_, _) => 36,
             OperationCode::Inherit => 37,
+            OperationCode::GetSuper(_) => 38,
         }
     }
 }
@@ -290,6 +294,10 @@ impl From<OperationCode> for Vec<u8> {
                 arguments_count,
             ],
             OperationCode::Inherit => vec![u8::from(OperationCode::Inherit)],
+            OperationCode::GetSuper(method_name_index) => vec![
+                u8::from(OperationCode::GetSuper(method_name_index)),
+                method_name_index,
+            ],
         }
     }
 }
@@ -525,6 +533,14 @@ impl TryFrom<&[u8]> for OperationCode {
                 Ok(OperationCode::InvokeProperty(value[1], value[2]))
             }
             37 => Ok(OperationCode::Inherit),
+            38 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(&OperationCode::GetSuper(u8::MAX))
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::GetSuper(value[1]))
+            }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
     }
