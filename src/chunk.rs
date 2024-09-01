@@ -62,11 +62,14 @@ pub enum OperationCode {
     // Bind method to class, arguments: (method name index in `ValueContainer`)
     Method(u8),
     // Operation for getting and calling property, arguments: (property name index in `ValueContainer`, number of call arguments)
-    // This operation doesn't provide new functionality, but rather optimize existing ones, chaining together `GerProperty` and `Call``
+    // This operation doesn't provide new functionality, but rather optimize existing ones, chaining together `GetProperty` and `Call``
     InvokeProperty(u8, u8),
     Inherit,
     // Get method from super class, arguments: (method name index in `ValueContainer`)
     GetSuper(u8),
+    // Operation for getting and calling super methpd, arguments: (super method name index in `ValueContainer`, number of call arguments)
+    // This operation doesn't provide new functionality, but rather optimize existing ones, chaining together `GetSuper` and `Call``
+    InvokeSuperMethod(u8, u8),
 }
 
 impl OperationCode {
@@ -111,6 +114,7 @@ impl OperationCode {
             OperationCode::InvokeProperty(_, _) => 3,
             OperationCode::Inherit => 1,
             OperationCode::GetSuper(_) => 2,
+            OperationCode::InvokeSuperMethod(_, _) => 3,
         }
     }
 }
@@ -157,6 +161,7 @@ impl From<OperationCode> for u8 {
             OperationCode::InvokeProperty(_, _) => 36,
             OperationCode::Inherit => 37,
             OperationCode::GetSuper(_) => 38,
+            OperationCode::InvokeSuperMethod(_, _) => 39,
         }
     }
 }
@@ -297,6 +302,14 @@ impl From<OperationCode> for Vec<u8> {
             OperationCode::GetSuper(method_name_index) => vec![
                 u8::from(OperationCode::GetSuper(method_name_index)),
                 method_name_index,
+            ],
+            OperationCode::InvokeSuperMethod(method_name_index, arguments_count) => vec![
+                u8::from(OperationCode::InvokeSuperMethod(
+                    method_name_index,
+                    arguments_count,
+                )),
+                method_name_index,
+                arguments_count,
             ],
         }
     }
@@ -540,6 +553,16 @@ impl TryFrom<&[u8]> for OperationCode {
                     return Err(OperationCodeConversionError::InvalidFormat);
                 }
                 Ok(OperationCode::GetSuper(value[1]))
+            }
+            39 => {
+                if value.len()
+                    < OperationCode::get_instruction_bytes_length(
+                        &OperationCode::InvokeSuperMethod(u8::MAX, u8::MAX),
+                    )
+                {
+                    return Err(OperationCodeConversionError::InvalidFormat);
+                }
+                Ok(OperationCode::InvokeSuperMethod(value[1], value[2]))
             }
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }

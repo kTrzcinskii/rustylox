@@ -1116,17 +1116,24 @@ impl<'a, 'b> Compiler<'a, 'b> {
             },
             false,
         );
-        self.handle_named_variable(
-            &Token {
-                token_type: TokenType::Super,
-                start: 0,
-                length: 0,
-                line: 0,
-            },
-            false,
-        );
-
-        self.emit_instruction(OperationCode::GetSuper(method_name_index));
+        let super_token = Token {
+            token_type: TokenType::Super,
+            start: 0,
+            length: 0,
+            line: 0,
+        };
+        // Optimize immediate super method call
+        if self.match_current(&TokenType::LeftParen) {
+            let arguments_count = self.parse_argument_list();
+            self.handle_named_variable(&super_token, false);
+            self.emit_instruction(OperationCode::InvokeSuperMethod(
+                method_name_index,
+                arguments_count,
+            ));
+        } else {
+            self.handle_named_variable(&super_token, false);
+            self.emit_instruction(OperationCode::GetSuper(method_name_index));
+        }
     }
 
     /// Returns number of parsed arguments

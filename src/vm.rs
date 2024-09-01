@@ -677,6 +677,32 @@ impl VirtualMachine {
                         .map_err(|_| VirtualMachineError::InvalidVariableType)?;
                     self.find_and_bind_method(base_class, method_name_string)?;
                 }
+                OperationCode::InvokeSuperMethod(method_name_index, arguments_count) => {
+                    let method_name = frame
+                        .closure
+                        .borrow()
+                        .function
+                        .borrow()
+                        .chunk
+                        .read_constant(method_name_index);
+                    let method_name_string = method_name
+                        .get_string_object()
+                        .expect("Method name should only be represented as string object");
+
+                    let base_class_value = self.stack_pop()?;
+                    let base_class = base_class_value
+                        .get_class_object()
+                        .map_err(|_| VirtualMachineError::InvalidVariableType)?;
+
+                    self.invoke_property_from_class(
+                        base_class,
+                        method_name_string,
+                        arguments_count,
+                        &frame,
+                    )?;
+
+                    frame = self.swap_call_frames_top(frame);
+                }
             }
         }
     }

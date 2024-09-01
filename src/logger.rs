@@ -234,6 +234,15 @@ impl Logger {
                         chunk.read_constant(method_name_index),
                     ))
                 }
+                OperationCode::InvokeSuperMethod(method_name_index, arguments_count) => {
+                    return Ok(Self::invoke_property_instruction(
+                        "OP_INVOKE_SUPER",
+                        offset,
+                        property_name_index,
+                        arguments_count,
+                        &chunk.read_constant(property_name_index),
+                    ))
+                }
             }
         }
         Ok(0)
