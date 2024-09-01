@@ -323,10 +323,21 @@ impl<'a> Lexer<'a> {
 
     fn check_for_keyword(&self, skip: usize, expected: &str, token_type: TokenType) -> TokenType {
         let start_index = self.start + skip;
-        let end_index = start_index + expected.len();
+        let mut end_index = start_index + expected.len();
+        if end_index > self.original_source.len() {
+            end_index = self.original_source.len();
+        }
 
         let actual = &self.original_source[start_index..end_index];
-        if actual == expected {
+
+        let is_token_finished = end_index == self.original_source.len()
+            || !self.original_source[end_index..]
+                .chars()
+                .next()
+                .unwrap()
+                .is_alphabetic();
+
+        if actual == expected && is_token_finished {
             return token_type;
         }
         TokenType::Identifier
