@@ -223,6 +223,9 @@ impl Logger {
                         &chunk.read_constant(property_name_index),
                     ))
                 }
+                OperationCode::Inherit => {
+                    return Ok(Self::simple_instruction("OP_INHERIT", offset, code))
+                }
             }
         }
         Ok(0)
@@ -333,7 +336,7 @@ impl Logger {
         property_name_index: u8,
         arguments_count: u8,
         property_name: &Value,
-    ) {
+    ) -> usize {
         println!(
             "{:<16} ({} args) {:>4} {}",
             name, arguments_count, property_name_index, property_name

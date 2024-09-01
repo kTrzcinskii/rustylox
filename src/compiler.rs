@@ -36,7 +36,9 @@ pub enum FunctionType {
     Initializer, // Class initializer
 }
 
-pub struct CompilingClass {}
+pub struct CompilingClass {
+    has_base_class: bool,
+}
 
 pub struct Compiler<'a, 'b> {
     parser: Parser,
@@ -962,7 +964,42 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.define_variable(name_constant);
 
         // We add new class to currently compiling classes
-        self.compiling_classes.push(CompilingClass {});
+        self.compiling_classes.push(CompilingClass {
+            has_base_class: false,
+        });
+
+        // Handle inheritance
+        if self.match_current(&TokenType::Less) {
+            self.consume(TokenType::Identifier, "Expect superclass name.");
+            // Load base class onto the stack
+            self.handle_variable(false);
+
+            // Handle edge case of self-inheriting
+            if self.are_identifiers_equal(class_name_token, &self.parser.previous.unwrap()) {
+                self.handle_error_at_token(
+                    &self.parser.previous.unwrap(),
+                    "Class cannot inherit from itself.",
+                );
+            }
+
+            // Create new scope to properly used "super"
+            self.start_scope();
+            self.compiling_classes.last_mut().unwrap().has_base_class = true;
+            // Fake token for "super" variable
+            self.add_local_variable(Token {
+                token_type: TokenType::Super,
+                start: 0,
+                length: 0,
+                line: 0,
+            });
+            // Define "super"
+            self.define_variable(0);
+
+            // Load current class onto the stack
+            self.handle_named_variable(class_name_token, false);
+
+            self.emit_instruction(OperationCode::Inherit);
+        }
 
         // We do it to load class name contant right on the top of the stack
         // This way, when we are handling methods we know which class they
@@ -977,6 +1014,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
         self.consume(TokenType::RightBrace, "Expect '}' after class body.");
         // Remove class name from the stack
         self.emit_instruction(OperationCode::PopStack);
+
+        // Close special "super" scope
+        if self.compiling_classes.last().unwrap().has_base_class {
+            self.end_scope();
+        }
 
         // Finish compiling class
         self.compiling_classes
@@ -1112,9 +1154,14 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn are_identifiers_equal(&self, lhs: &Token, rhs: &Token) -> bool {
-        // We do it so that our "fake this" works as first local in methods
-        if lhs.token_type == rhs.token_type && lhs.token_type == TokenType::This {
-            return true;
+        // We do it so that our fake "this" and "super" work
+        if lhs.token_type == rhs.token_type {
+            if lhs.token_type == TokenType::This {
+                return true;
+            }
+            if lhs.token_type == TokenType::Super {
+                return true;
+            }
         }
         if lhs.token_type != TokenType::Identifier || rhs.token_type != TokenType::Identifier {
             return false;

@@ -638,6 +638,29 @@ impl VirtualMachine {
                     }
                     frame = self.swap_call_frames_top(frame);
                 }
+                OperationCode::Inherit => {
+                    // Base class and current class are already on the stack
+                    let base_class = self.stack_peek(1)?;
+                    let current_class = self.stack_peek(0)?;
+                    match base_class.get_class_object() {
+                        Ok(base_class) => {
+                            let current_class = current_class
+                                .get_class_object()
+                                .map_err(|_| VirtualMachineError::InvalidVariableType)?;
+                            Table::insert_all_from(
+                                &base_class.borrow().methods,
+                                &mut current_class.borrow_mut().methods,
+                            );
+                            // Remove current class from stack
+                            self.stack_pop()?;
+                            // TODO: properly handle base class on the stack once all inheritance is done
+                        }
+                        Err(_) => {
+                            self.runtime_error_message("Base class must be a class.", &frame);
+                            return Err(VirtualMachineError::InvalidVariableType);
+                        }
+                    }
+                }
             }
         }
     }

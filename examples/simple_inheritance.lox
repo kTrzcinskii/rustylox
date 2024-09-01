@@ -1,0 +1,15 @@
+class Person {
+  greet() {
+    print "welcome";
+  }
+}
+
+class Child < Person {
+  laugh() {
+    print "haha";
+  }
+}
+
+var c = Child();
+c.greet();
+c.laugh();

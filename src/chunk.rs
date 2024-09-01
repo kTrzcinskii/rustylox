@@ -64,6 +64,7 @@ pub enum OperationCode {
     // Operation for getting and calling property, arguments: (property name index in `ValueContainer`, number of call arguments)
     // This operation doesn't provide new functionality, but rather optimize existing ones, chaining together `GerProperty` and `Call``
     InvokeProperty(u8, u8),
+    Inherit,
 }
 
 impl OperationCode {
@@ -106,6 +107,7 @@ impl OperationCode {
             OperationCode::SetProperty(_) => 2,
             OperationCode::Method(_) => 2,
             OperationCode::InvokeProperty(_, _) => 3,
+            OperationCode::Inherit => 1,
         }
     }
 }
@@ -150,6 +152,7 @@ impl From<OperationCode> for u8 {
             OperationCode::SetProperty(_) => 34,
             OperationCode::Method(_) => 35,
             OperationCode::InvokeProperty(_, _) => 36,
+            OperationCode::Inherit => 37,
         }
     }
 }
@@ -286,6 +289,7 @@ impl From<OperationCode> for Vec<u8> {
                 property_name_index,
                 arguments_count,
             ],
+            OperationCode::Inherit => vec![u8::from(OperationCode::Inherit)],
         }
     }
 }
@@ -520,6 +524,7 @@ impl TryFrom<&[u8]> for OperationCode {
                 }
                 Ok(OperationCode::InvokeProperty(value[1], value[2]))
             }
+            37 => Ok(OperationCode::Inherit),
             _ => Err(OperationCodeConversionError::InvalidValue(value[0])),
         }
     }
