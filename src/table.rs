@@ -122,7 +122,10 @@ impl Table {
 
     // We use entries instead of passing self so that we can use it on `adjust_size` for new entries array
     fn find_entry(entries: &[TableEntry], key: &EntryKey) -> usize {
-        let mut index = key.borrow().get_hash() as usize % entries.len();
+        // Using modulo is quite slow, but we know that:
+        // - our size is always power of 2
+        // - a % b, when b is 2^x, is the same as a & (b-1)
+        let mut index = key.borrow().get_hash() as usize & (entries.len() - 1);
         let mut first_tombstone_index: Option<usize> = None;
         // Thanks to the load factor and the way we grow the array there will never be a case of infinite loop
         loop {
@@ -145,7 +148,7 @@ impl Table {
                 },
             }
 
-            index = (index + 1) % entries.len();
+            index = (index + 1) & (entries.len() - 1);
         }
     }
 
@@ -153,7 +156,8 @@ impl Table {
         if self.entries_count == 0 {
             return None;
         }
-        let mut index = StringObject::hash(new_string) as usize % self.entries.len();
+        // same trick as in `find_entry`
+        let mut index = StringObject::hash(new_string) as usize & (self.entries.len() - 1);
         loop {
             let entry = &self.entries[index];
             match entry {
@@ -165,7 +169,7 @@ impl Table {
                 TableEntry::Tombstone => {}
                 TableEntry::Empty => return None,
             }
-            index = (index + 1) % self.entries.len();
+            index = (index + 1) & (self.entries.len() - 1);
         }
     }
 
