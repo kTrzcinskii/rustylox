@@ -238,9 +238,9 @@ impl Logger {
                     return Ok(Self::invoke_property_instruction(
                         "OP_INVOKE_SUPER",
                         offset,
-                        property_name_index,
+                        method_name_index,
                         arguments_count,
-                        &chunk.read_constant(property_name_index),
+                        &chunk.read_constant(method_name_index),
                     ))
                 }
             }
