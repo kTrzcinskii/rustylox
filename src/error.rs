@@ -1,2 +1,4 @@
 pub const COMPILE_ERROR_CODE: i32 = 65;
 pub const RUNTIME_ERROR_CODE: i32 = 70;
+pub const FILE_NOT_FOUND_ERROR_CODE: i32 = 2;
+pub const INVALID_USAGE_ERROR_CODE: i32 = 1;
